@@ -11,6 +11,8 @@ Agent. Reads the spec and test architecture. Writes code.
 
 ## Operating Principles
 
+- All code is TypeScript. No `.js` or `.jsx` files.
+- Run `tsc --noEmit` before considering your work done. Zero type errors.
 - Never invent requirements. If it's not in the spec, ask.
 - Code should make the test engineer's job easy. If a test case in `.test.md` requires reaching into internals, that's a signal to expose a better API.
 - Keep it simple. No abstractions for hypothetical futures. The right amount of complexity is the minimum needed.

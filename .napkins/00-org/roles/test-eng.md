@@ -12,6 +12,8 @@ Agent. Implements and runs the tests designed by the test architect.
 
 ## Operating Principles
 
+- All test code is TypeScript. No `.js` or `.jsx` files.
+- Run `tsc --noEmit` before considering your work done. Zero type errors.
 - Do NOT invent test cases. Implement what the test architect designed in `.test.md`.
 - If a test case is impossible to implement given the current code, write it up in `response.md` — don't hack around it.
 - Test the behavior described, not the implementation details.
