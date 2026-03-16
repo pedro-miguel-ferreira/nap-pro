@@ -1,109 +1,131 @@
-* integration + stress test — test cases
+* integration + stress test — test cases (v2)
 
 * T-0500-01: full CLI command sequence runs unattended
+  * size: big (full Electron + CLI + socket)
   * flow: integration script runs every CLI command in sequence, asserts results
   * subsystems: all — socket, pty, sidebar, poke, nap, done
-  * action: script executes:
-    * nap start "echo hello world" --name agent-a → assert returns { id, name: "agent-a" }
-    * nap start "sleep 5 && nap done 'finished sleeping'" --name agent-b → assert returns { id, name: "agent-b" }
-    * nap ps → assert shows 3 sessions (shell + agent-a + agent-b) with correct names and statuses
-    * nap poke agent-a "wake up" → assert no error
-    * nap peek agent-a → assert no error (can't easily assert UI switch from script)
-    * nap nap agent-b --timeout 15 → assert returns "finished sleeping" with exit 0
-    * nap kill agent-a → assert no error
-    * nap ps → assert agent-a status is "exited"
-    * nap close agent-a → assert no error
-    * nap ps → assert agent-a is gone, 2 sessions remain
-  * expected: all assertions pass, script exits 0
-  * likely to break: ordering dependencies — each step assumes previous step's state
-    * if nap start is slow (pty spawn takes >1s), the nap ps right after might not see the terminal yet
-    * if nap done message doesn't arrive before nap nap timeout, the whole chain fails
-    * need adequate sleep/retry between steps, or poll for expected state
+  * verification: automatable
+    * run as shell script from first terminal (or as Playwright test driving CLI via `app.evaluate`)
+    * sequence with assertions:
+      * `nap start "echo hello world" --name agent-a` → parse JSON stdout, assert `name === "agent-a"`
+      * `nap start "sleep 5 && nap done 'finished sleeping'" --name agent-b` → assert `name === "agent-b"`
+      * `nap ps` → parse output, assert 3 sessions: shell, agent-a, agent-b
+      * `nap poke agent-a "wake up"` → assert exit code 0
+      * `nap peek agent-a` → assert exit code 0
+      * `nap nap agent-b --timeout 15` → assert output contains "finished sleeping", exit code 0
+      * `nap kill agent-a` → assert exit code 0
+      * `nap ps` → assert agent-a status is "exited"
+      * `nap close agent-a` → assert exit code 0
+      * `nap ps` → assert 2 sessions remain (shell + agent-b)
+    * script exits 0 on all pass, exits 1 with failure detail on any assertion failure
+  * likely to break: ordering dependencies — nap ps right after nap start might not see the terminal if pty spawn is slow — need poll/retry with short timeout
 
 * T-0500-02: parent-child chain three levels deep
-  * flow: shell → starts parent → parent starts child → child calls nap done → parent receives, calls nap done → shell receives
+  * size: big (full CLI chain)
+  * flow: shell → starts child → child starts grandchild → grandchild does nap done → child receives, does nap done → shell receives
   * subsystems: NAP_SESSION_ID propagation, poke delivery chain, nap nap polling
-  * action: shell runs:
-    * nap start "nap start 'sleep 2 && nap done result-from-child' --name grandchild && nap nap grandchild && nap done got-$?" --name child
-    * nap nap child --timeout 15
-  * expected: shell unblocks with child's done message, nap ps shows correct parent chain: shell → child → grandchild
-  * likely to break: NAP_SESSION_ID environment variable doesn't propagate correctly through nested pty spawns
-    * child's pty has NAP_SESSION_ID=child-id
-    * grandchild's nap start reads child's NAP_SESSION_ID → sets parentId correctly
-    * if env vars don't cascade through shell -c invocation, parentId is wrong
+  * verification: automatable
+    * from shell:
+      * `nap start "nap start 'sleep 2 && nap done child-result' --name grandchild && nap nap grandchild && nap done got-grandchild" --name child`
+      * `RESULT=$(nap nap child --timeout 15)`
+    * assert RESULT contains "got-grandchild"
+    * verify parent chain via nap ps: shell → child → grandchild
+    * verify all three have correct parentId in store:
+      * `page.evaluate(() => useTerminalStore.getState().terminals.map(t => ({ name: t.name, parentId: t.parentId })))`
+    * verify all three status dots: grandchild=done, child=done, shell=running
+  * likely to break: NAP_SESSION_ID doesn't propagate through `shell -c` invocation — grandchild's parentId points to shell instead of child
 
 * T-0500-03: 10 concurrent terminals with high-output commands
-  * flow: spawn 10 terminals each running output-heavy command → all running simultaneously
-  * subsystems: pty management, xterm.js buffers, WebGL contexts, memory
-  * action: `for i in {1..10}; do nap start "yes | head -n 10000" --name stress-$i; done`
-  * expected: all 10 spawn, all produce output, app doesn't crash or freeze
-  * likely to break: 10 ptys dumping data simultaneously overwhelms IPC bridge
-    * main process is single-threaded — 10 pty.onData handlers firing concurrently
-    * each fires IPC to renderer, renderer has 10 xterm.write() streams
-    * CPU spikes, UI thread starves, app appears frozen
-  * metric: CPU peak during burst, recovery time after commands finish
+  * size: big (Playwright + Electron, resource-intensive)
+  * flow: spawn 10 terminals → each runs output-heavy command → all running simultaneously
+  * subsystems: pty management, xterm.js buffers, IPC bridge, memory
+  * verification: automatable
+    * spawn 10 terminals via CLI: `for i in {1..10}; do nap start "seq 1 10000" --name stress-$i; done`
+    * wait for all to complete (poll status until all exited)
+    * verify all 10 exist in store: `page.evaluate(() => useTerminalStore.getState().terminals.length) === 11` (10 + initial shell)
+    * verify each has output: `page.evaluate(() => getTerminal('stress-1-id').terminal.buffer.active.length > 100)` for each
+    * measure: `page.evaluate(() => performance.memory?.usedJSHeapSize)` (Chrome-only API)
+    * assert app didn't crash: window still exists, store is responsive
+  * likely to break: 10 ptys dumping data simultaneously overwhelm the IPC bridge — main process single-threaded, all 10 pty.onData handlers fire concurrently
 
-* T-0500-04: rapid terminal switching under load — no visual corruption
-  * flow: 10 terminals active → click through all cards rapidly
-  * subsystems: DOM reparenting, WebGL reattach, fitAddon, sidebar state
-  * setup: 10 terminals with different content (some scrollback, some active output)
-  * action: click through all 10 cards in sequence, <200ms between clicks
-  * expected: each switch shows the correct terminal content, no terminal shows another's buffer
-  * likely to break: the DOM reparent + fitAddon.fit() race condition from 0200-04, amplified by 10 terminals
-    * with load: fit() takes longer, next click fires before fit() completes
-    * wrong terminal gets resized, or reattach shows stale DOM state
-  * metric: switch latency (should be < 100ms perceived)
+* T-0500-04: rapid terminal switching under load — no content corruption
+  * size: big (Playwright + Electron)
+  * flow: 10 terminals with different content → switch through all rapidly → verify correct content on each
+  * subsystems: DOM reparenting, WebGL, fitAddon, zustand store
+  * verification: automatable
+    * create 10 terminals, write unique markers: `echo MARKER_N` where N=1..10
+    * rapid switch loop via `page.evaluate()`:
+      * cycle through all 10 terminal ids with `setActive()` calls, 50ms between each
+      * do 3 full cycles (30 switches)
+    * after settling, for each terminal:
+      * `setActive(termId)`, wait 100ms
+      * read xterm buffer — assert MARKER_N present and no other MARKER_M
+    * assert no console errors during switches
+  * likely to break: race condition in Terminal.tsx useEffect — DOM manipulation from switch N overlaps with switch N+1 under load
 
 * T-0500-05: 10 WebGL contexts simultaneously — no context lost
-  * flow: each terminal has its own WebGL addon → 10 contexts active on GPU
+  * size: medium (Playwright + Electron)
+  * flow: each terminal has WebGL addon → 10 contexts active on GPU
   * subsystems: addon-webgl, GPU context management
-  * setup: 10 terminals created and rendered at least once
-  * action: listen for webglcontextlost event on all 10 terminals, run for 30 seconds
-  * expected: zero context-lost events, all terminals render correctly when switched to
-  * likely to break: GPU has a limit (~16 contexts on most hardware)
-    * 10 should be fine, but some GPUs report lower limits
-    * if a context is lost, that terminal falls back to... nothing, unless canvas fallback is wired
-    * this is the "it works on my machine" test — CI/CD environments may differ
+  * verification: automatable
+    * create 10 terminals, each opened (rendered at least once so WebGL initializes — terminal-registry.ts:44-66)
+    * install webglcontextlost listeners on all 10:
+      * `page.evaluate(() => { window._contextLostCount = 0; for (const [id, entry] of registry) { entry.terminal.element?.querySelector('canvas')?.addEventListener('webglcontextlost', () => window._contextLostCount++); } })`
+    * switch through all 10 terminals (forces reattach)
+    * wait 5s
+    * assert: `page.evaluate(() => window._contextLostCount) === 0`
+    * verify each terminal renders: switch to it, write a character, read it back from buffer
+  * likely to break: GPU limit exceeded — most hardware supports ~16 contexts, 10 should be fine, but integrated GPUs may be lower
 
 * T-0500-06: memory stays bounded with scrollback pressure
-  * flow: 10 terminals each accumulate large scrollback (10k lines) → measure total memory
+  * size: medium (Playwright + Electron)
+  * flow: 10 terminals each fill scrollback → measure total memory
   * subsystems: xterm.js buffer management, V8 heap
-  * setup: 10 terminals, each runs `seq 1 20000` (fills 10k scrollback, older lines evicted)
-  * action: measure memory before, after spawning, after scrollback fills
-  * expected: memory < 500MB total (ballpark from spec), grows linearly not exponentially
-  * likely to break: scrollback eviction not working — buffer grows unbounded
-    * xterm.js scrollback limit is set to 10k, but does it actually evict?
-    * 10 terminals × 10k lines × ~100 bytes/line = ~10MB of text — memory should be dominated by xterm objects, not raw text
-    * if memory is >500MB, something is leaking (DOM nodes, WebGL textures, pty buffers)
+  * verification: automatable
+    * measure baseline: `page.evaluate(() => performance.memory?.usedJSHeapSize)` (renderer process)
+    * spawn 10 terminals, each runs `seq 1 20000` (fills 10k scrollback, evicts older lines)
+    * wait for all to complete
+    * measure after: same API
+    * compute delta — assert < 500MB (spec ballpark)
+    * verify scrollback eviction: for each terminal, check `terminal.buffer.active.length <= 10000 + some_overhead`
+    * also check main process memory via `app.evaluate(() => process.memoryUsage().heapUsed)`
+  * likely to break: scrollback eviction not working — buffer grows unbounded, or WebGL textures leak on repeated renders
 
 * T-0500-07: poke delivery under contention — multiple agents poking one target
-  * flow: agents A, B, C all poke agent D simultaneously
+  * size: big (full CLI + socket + pty)
+  * flow: agents A, B, C all poke agent D simultaneously → D's queue receives all three → delivery in order
   * subsystems: message queue, delivery loop, pty stdin
-  * setup: terminal D runs `cat`, terminals A/B/C exist
-  * action: simultaneously: `nap poke D "from-A"`, `nap poke D "from-B"`, `nap poke D "from-C"`
-  * expected: all three messages delivered to D, in enqueue order, with 500ms gaps, no interleaving
-  * likely to break: message queue is per-terminal but concurrent enqueues could corrupt it
-    * Node is single-threaded so actual corruption is unlikely, but enqueue ORDER depends on which socket message arrives first
-    * verify: messages arrive in D in the order they were enqueued (which may differ from send order)
-    * critical: no partial message delivery (half of "from-A" followed by half of "from-B")
+  * verification: automatable
+    * create terminal D running `cat`
+    * simultaneously send: `nap poke D "from-A"`, `nap poke D "from-B"`, `nap poke D "from-C"`
+    * wait 3s for delivery (3 messages × 500ms gap + overhead)
+    * read D's xterm buffer — all three messages present
+    * assert no partial message delivery: "from-A" is a complete line, not interleaved with "from-B"
+    * order depends on enqueue order (which socket message arrives first) — verify messages are whole, ordered won't be deterministic across runs
+  * likely to break: concurrent pty.write calls interleave bytes — Node is single-threaded so this shouldn't happen, but if delivery loop doesn't serialize properly, partial writes could occur
 
 * T-0500-08: integration test script is idempotent
+  * size: big (full test harness)
   * flow: run integration script → clean up → run again → same result
   * subsystems: test harness, cleanup logic
-  * action: run integration.sh twice in a row
-  * expected: second run passes — no stale state from first run
-  * likely to break: terminals from first run still exist
-    * script must clean up (nap close all test terminals) or use unique names
-    * stale socket from crashed test run — app restart needed
-    * also: auto-increment naming ("agent-1") — second run gets "agent-11", "agent-12" unless counter resets
+  * verification: automatable
+    * run integration script (T-0500-01) twice in a row
+    * assert second run passes — no stale terminals from first run
+    * verify cleanup: script must `nap close` all test terminals before exiting, or use unique name prefixes per run
+    * also: if app is restarted between runs, auto-increment counter resets — terminal names must not collide
+  * likely to break: terminals from first run still exist with same names — second run's `nap start --name agent-a` conflicts
 
-* T-0500-09: addon-search works across terminals (if implemented)
-  * flow: user hits Cmd+F → search bar appears → types query → matches highlighted in active terminal
-  * subsystems: addon-search, terminal switching
-  * setup: terminal A has output containing "ERROR" in scrollback
-  * action: Cmd+F, type "ERROR", Enter for next match, Escape to close
-  * expected: matches highlighted, scrolls to first match, Escape clears and closes
-  * likely to break: search addon searches wrong terminal's buffer after a switch
-    * if search addon is attached to one terminal and user switches, search must rebind
-    * or: search always operates on the active terminal's buffer
-    * low priority per spec — skip if time is tight
+* T-0500-09: addon-search works across terminals
+  * size: manual
+  * verification: manual
+    * reason: search overlay is a UI feature — Cmd+F opens a search bar, matches are visually highlighted, scrolls to match. Verifying visual highlighting and scroll-to-match programmatically is fragile and low-value for POC.
+    * also: this feature is marked "nice-to-have — skip if time is tight" in spec
+    * manual test: open terminal with output containing "ERROR", hit Cmd+F, type "ERROR", verify highlight and scroll, press Escape to dismiss
+    * if ever automated: `page.evaluate(() => searchAddon.findNext('ERROR'))` returns boolean, but doesn't verify visual highlighting
+
+* confidence assessment
+  * small tests (T-0300-02, T-0300-07, T-0300-08): pure logic — cheap, fast, high confidence for protocol and CLI edge cases
+  * medium tests (most of the above): Playwright + Electron integration — these cover the seams where bugs actually live (IPC bridge, socket protocol, buffer management, pty lifecycle)
+  * big tests (T-0500-01 through T-0500-04, T-0500-07, T-0500-08): full end-to-end — expensive but necessary for the integration/stress proof point
+  * manual (T-0500-09): low priority, UI-only
+  * ~80% confidence comes from small + medium tests across 0100-0400 — the big tests in 0500 fill the remaining gaps and prove the system works as a whole

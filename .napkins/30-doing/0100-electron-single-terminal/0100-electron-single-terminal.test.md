@@ -1,80 +1,99 @@
-* electron single terminal — test cases
+* electron single terminal — test cases (v2)
 
 * T-0100-01: pty data reaches xterm through IPC bridge
-  * flow: pty.onData → main process → IPC → preload → renderer → xterm.write
+  * size: medium (Playwright + Electron)
+  * flow: pty.onData → main process → IPC `pty:data` → preload → renderer → xterm.write
   * subsystems: node-pty (main), IPC bridge, xterm.js (renderer)
-  * setup: launch app, shell spawns
-  * action: type `echo hello` in terminal
-  * expected: "hello" appears in xterm output buffer
-  * likely to break: IPC serialization — binary data or escape sequences get mangled crossing the process boundary
-    * pty emits raw bytes, xterm expects them untouched
-    * test with ANSI color codes: `printf "\033[31mred\033[0m"` — should render colored text, not escape garbage
+  * verification: automatable
+    * `app.evaluate()` — write `echo hello\n` to pty via `ptys.get(id).write('echo hello\n')`
+    * `page.evaluate()` — read xterm buffer:
+      * `getTerminal(id).terminal.buffer.active.getLine(N).translateToString()`
+      * assert line contains "hello"
+    * also: ANSI color test — write `printf "\033[31mred\033[0m"` to pty
+      * read buffer line, verify text content is "red" (xterm parses escape sequences)
+      * verifies IPC doesn't mangle escape bytes
+  * likely to break: IPC serialization strips or re-encodes raw bytes crossing the process boundary
 
 * T-0100-02: xterm input reaches pty through IPC bridge (reverse path)
-  * flow: xterm.onData → renderer → IPC → main → pty.write
+  * size: medium (Playwright + Electron)
+  * flow: xterm.onData → renderer → IPC `pty:write` → main → pty.write
   * subsystems: xterm.js (renderer), IPC bridge, node-pty (main)
-  * action: type characters in terminal, including special keys (Ctrl+C, arrow keys, tab completion)
-  * expected: pty receives exact byte sequences — Ctrl+C sends 0x03, arrow keys send escape sequences
-  * likely to break: key events get intercepted by Electron before reaching xterm
-    * Cmd+C vs Ctrl+C — Electron might eat Ctrl+C as a copy shortcut
-    * tab character might trigger Electron focus navigation instead of shell completion
+  * verification: automatable
+    * `page.evaluate()` — call `getTerminal(id).terminal.paste('echo roundtrip\n')` to inject input
+    * `page.evaluate()` — poll xterm buffer for "roundtrip" appearing in output (shell echoes it)
+      * `getTerminal(id).terminal.buffer.active.getLine(N).translateToString().includes('roundtrip')`
+    * this proves: renderer → IPC → pty → pty output → IPC → xterm (full round-trip)
+    * also test: Ctrl+C (0x03) — send via `terminal.paste('\x03')`, verify shell returns to prompt
+  * likely to break: Electron menu accelerators intercept Ctrl+C before it reaches xterm
 
 * T-0100-03: resize propagates from window to pty
-  * flow: window resize → fitAddon.fit() → new cols/rows → IPC → pty.resize(cols, rows)
+  * size: medium (Playwright + Electron)
+  * flow: window resize → ResizeObserver → fitAddon.fit() → IPC `pty:resize` → pty.resize(cols, rows)
   * subsystems: addon-fit (renderer), IPC bridge, node-pty (main)
-  * action: resize window from 800x600 to 1200x800
-  * expected: terminal content reflows, shell prompt adjusts, `tput cols` returns new column count
-  * likely to break: debounce timing — rapid resize fires multiple fit() calls, pty gets intermediate sizes
-    * the 100ms debounce means pty.resize is called once, not 50 times during drag
-    * if debounce is missing: pty gets slammed with resize signals, shell goes haywire
-  * also test: resize during active output (run `top`, resize) — should not crash or corrupt display
+  * verification: automatable
+    * read initial cols: `page.evaluate(() => getTerminal(id).terminal.cols)`
+    * resize window: `electronApp.browserWindow.setSize(1400, 900)`
+    * wait 150ms (50ms debounce + render)
+    * read new cols: `page.evaluate(() => getTerminal(id).terminal.cols)`
+    * assert new cols > old cols
+    * verify pty agrees: `page.evaluate(() => { terminal.paste('tput cols\n'); })` then read buffer for the number
+    * assert tput output matches xterm cols
+  * likely to break: ResizeObserver debounce (50ms in Terminal.tsx:44) — too short causes multiple resize IPC calls, too long causes stale pty dimensions
 
 * T-0100-04: pty exits but window stays alive
-  * flow: user types `exit` → shell exits → pty emits 'exit' event → main process updates state → renderer shows exit state
-  * subsystems: node-pty lifecycle, main process state, renderer display
-  * action: type `exit` in shell
-  * expected: window stays open, scrollback preserved, user can scroll up through history
-  * likely to break: the natural instinct is to close the window when the process exits
-    * if someone wires pty.onExit → window.close(), the user loses scrollback
-    * also: what does xterm show after pty dies? needs an explicit "[process exited]" or cursor stops blinking
-  * also test: try typing after pty exits — should do nothing, not throw
+  * size: medium (Playwright + Electron)
+  * flow: user types `exit` → shell exits → pty `exit` event → IPC `pty:exit` → store.setStatus → renderer stays
+  * subsystems: node-pty lifecycle, main process state, renderer
+  * verification: automatable
+    * write `exit\n` to pty
+    * wait for IPC `pty:exit` event — `page.evaluate()` to listen for store status change:
+      * `useTerminalStore.getState().terminals[0].status === 'exited'`
+    * assert window still exists: `electronApp.browserWindow.isDestroyed() === false`
+    * read xterm buffer — scrollback preserved:
+      * `getTerminal(id).terminal.buffer.active.length > 0`
+    * also: verify typing after exit does nothing — paste text, confirm buffer doesn't change
+  * likely to break: someone wires pty.onExit → window.close(), losing scrollback
 
 * T-0100-05: window close kills pty cleanly
-  * flow: user closes window (Cmd+W) → app.on('window-all-closed') → kill pty → app.quit()
+  * size: medium (Playwright + Electron)
+  * flow: close window → `mainWindow.on('close')` iterates ptys.values(), calls pty.kill() → app.quit()
   * subsystems: Electron window lifecycle, node-pty, process cleanup
-  * action: close window while shell is running
-  * expected: pty process killed (SIGHUP), no orphan shell process left behind
-  * likely to break: pty.kill() not called before window destroys — orphan shell process survives app quit
-    * verify with `ps aux | grep $SHELL` before and after — no new orphan
-    * especially bad if pty spawned child processes (e.g., running `node server.js` in shell)
+  * verification: automatable
+    * `app.evaluate()` — read pty process pid: `ptys.get(id).pid`
+    * close window: `electronApp.browserWindow.close()`
+    * check process is gone: `app.evaluate(() => { try { process.kill(pid, 0); return true; } catch { return false; } })` should return false
+    * verifies main.ts:41-44 cleanup loop works
+  * likely to break: pty.kill() not called before window destroys — orphan shell process
 
 * T-0100-06: high-throughput output doesn't choke the IPC bridge
-  * flow: pty produces massive output → IPC bridge → xterm.write() in tight loop
+  * size: medium (Playwright + Electron)
+  * flow: pty produces massive output → IPC bridge → xterm.write() in rapid succession
   * subsystems: node-pty, IPC serialization, xterm.js write buffer
-  * action: run `seq 1 50000` — 50k lines of output
-  * expected: all lines arrive, scrollback contains them, terminal stays responsive during and after
-  * likely to break: IPC backs up — renderer can't process writes fast enough
-    * xterm.write() is synchronous, large writes block the renderer
-    * may need write batching or flow control at the IPC layer
-    * symptom: UI freezes during heavy output, then catches up
-  * also test: can user scroll up to line 1 after output finishes? (scrollback = 10k lines, so earliest lines are gone, but line 40001+ should be there)
+  * verification: automatable
+    * write `seq 1 50000\n` to pty
+    * wait for output to settle (poll buffer length until stable for 500ms)
+    * read xterm buffer — scrollback is 10,000 lines (terminal-registry.ts:15)
+    * verify last lines present: `getTerminal(id).terminal.buffer.active.getLine(buffer.active.length - 2).translateToString()` contains "50000"
+    * verify earliest lines are evicted (scrollback limit enforced)
+    * measure: `page.evaluate(() => performance.now())` before and after — output should complete in < 10s
+  * likely to break: IPC backs up — renderer can't process writes fast enough, UI freezes during burst
 
-* T-0100-07: WebGL addon initialization and fallback
-  * flow: terminal creates → WebGL addon loads → attaches to canvas
-  * subsystems: xterm.js, addon-webgl, GPU context
-  * action: app launches normally
-  * expected: WebGL addon active (smooth rendering, GPU-accelerated)
-  * likely to break: WebGL context creation fails on certain hardware/CI
-    * spec says fall back to canvas renderer + log warning
-    * test: force WebGL failure (mock context creation) → verify canvas fallback works
-    * verify: no crash, just degraded rendering
+* T-0100-07: WebGL addon initialization and canvas fallback
+  * size: medium (Playwright + Electron)
+  * verification: partially automatable
+    * happy path: automatable
+      * `page.evaluate(() => { const t = getTerminal(id).terminal; return t._addonManager?._addons })` — check WebGL addon is loaded
+      * or: check no console warnings about WebGL failure
+    * fallback path: manual
+      * reason: forcing WebGL context creation failure in a real Electron GPU process requires mocking at the GL driver level — not reliable in Playwright
+      * the canvas fallback code exists in terminal-registry.ts:48-66 — verify by code review
+      * could test in headless CI where WebGL is unavailable — mark as "CI-only medium test" if CI has no GPU
+  * likely to break: WebGL context creation fails silently — no fallback triggered, terminal renders nothing
 
 * T-0100-08: native module build (node-pty + electron-rebuild)
-  * flow: npm install → electron-rebuild → node-pty compiles against Electron's Node headers
-  * subsystems: node-pty native addon, electron-rebuild toolchain
-  * action: fresh clone, `npm install`, `npm start`
-  * expected: node-pty loads without "module version mismatch" error, shell spawns
-  * likely to break: this is the #1 risk per the napkin
-    * node-pty compiled against system Node, not Electron's Node → crash at require()
-    * missing xcode CLI tools on fresh macOS → compile fails silently
-    * test: `npm start` after clean install produces a working terminal, not a white screen with console errors
+  * size: big
+  * verification: manual
+    * reason: this is a developer environment journey — depends on macOS version, Xcode CLI tools, Python, system Node version
+    * verification: fresh clone → `npm install` → `npm start` → terminal works (not a white screen with console errors)
+    * can partially automate in CI: `npm install && npm start` exits 0, pty.spawn doesn't throw
+    * but the real value is catching it on a new developer's machine
