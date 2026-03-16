@@ -1,102 +1,62 @@
 import { useEffect, useRef } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
-import { WebglAddon } from '@xterm/addon-webgl';
-import { CanvasAddon } from '@xterm/addon-canvas';
-import { FitAddon } from '@xterm/addon-fit';
+import { useTerminalStore } from '../store';
+import { getTerminal, openTerminal } from '../terminal-registry';
 
 export function Terminal() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const activeTerminalId = useTerminalStore((s) => s.activeTerminalId);
 
+  // Reparent terminal DOM element when active terminal changes
   useEffect(() => {
-    const term = new XTerm({
-      scrollback: 10000,
-      cursorBlink: true,
-      theme: {
-        background: '#1e1e1e',
-        foreground: '#d4d4d4',
-        cursor: '#d4d4d4',
-        cursorAccent: '#1e1e1e',
-        selectionBackground: '#264f78',
-      },
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      fontSize: 14,
-    });
+    if (!activeTerminalId || !containerRef.current) return;
+    const entry = getTerminal(activeTerminalId);
+    if (!entry) return;
 
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
+    const container = containerRef.current;
 
-    term.open(containerRef.current!);
+    // Clear container
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
 
-    // WebGL renderer with canvas fallback
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-        try {
-          term.loadAddon(new CanvasAddon());
-        } catch (e) {
-          console.warn('Canvas fallback failed after WebGL context loss:', e);
-        }
-      });
-      term.loadAddon(webglAddon);
-    } catch (e) {
-      console.warn('WebGL addon failed, falling back to canvas:', e);
-      try {
-        term.loadAddon(new CanvasAddon());
-      } catch (e2) {
-        console.warn('Canvas addon also failed, using DOM renderer:', e2);
+    if (!entry.opened) {
+      // First display: open terminal into this container (initializes DOM + WebGL)
+      openTerminal(activeTerminalId, container);
+    } else {
+      // Already opened: reparent existing DOM element
+      if (entry.terminal.element) {
+        container.appendChild(entry.terminal.element);
       }
     }
 
-    fitAddon.fit();
+    entry.fitAddon.fit();
+    window.electronAPI.pty.resize(activeTerminalId, entry.terminal.cols, entry.terminal.rows);
+    entry.terminal.focus();
+  }, [activeTerminalId]);
 
-    // IPC: pty output → xterm
-    const removeDataListener = window.electronAPI.pty.onData((data: string) => {
-      term.write(data);
-    });
+  // ResizeObserver handles both window resize and sidebar toggle
+  useEffect(() => {
+    if (!containerRef.current) return;
 
-    // IPC: pty exit → show message, disable input
-    const removeExitListener = window.electronAPI.pty.onExit((exitCode: number) => {
-      term.write(`\r\n\r\n[process exited with code ${exitCode}]`);
-      term.options.disableStdin = true;
-    });
-
-    // xterm input → pty
-    const inputDisposable = term.onData((data: string) => {
-      window.electronAPI.pty.write(data);
-    });
-
-    // Send initial size and signal ready
-    window.electronAPI.pty.resize(term.cols, term.rows);
-    window.electronAPI.pty.ready();
-
-    // Resize with 100ms debounce
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-    const onResize = () => {
+    const observer = new ResizeObserver(() => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        fitAddon.fit();
-        window.electronAPI.pty.resize(term.cols, term.rows);
-      }, 100);
-    };
-    window.addEventListener('resize', onResize);
+        const id = useTerminalStore.getState().activeTerminalId;
+        if (!id) return;
+        const entry = getTerminal(id);
+        if (!entry || !entry.opened) return;
+        entry.fitAddon.fit();
+        window.electronAPI.pty.resize(id, entry.terminal.cols, entry.terminal.rows);
+      }, 50);
+    });
 
-    term.focus();
-
+    observer.observe(containerRef.current);
     return () => {
       clearTimeout(resizeTimer);
-      window.removeEventListener('resize', onResize);
-      removeDataListener();
-      removeExitListener();
-      inputDisposable.dispose();
-      term.dispose();
+      observer.disconnect();
     };
   }, []);
 
-  return (
-    <div
-      ref={containerRef}
-      style={{ width: '100%', height: '100%' }}
-    />
-  );
+  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 }

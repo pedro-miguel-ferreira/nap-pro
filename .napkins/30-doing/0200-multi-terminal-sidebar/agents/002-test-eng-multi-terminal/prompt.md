@@ -19,7 +19,11 @@ Write and run tests for the multi-terminal and sidebar feature.
 
 ## Testing setup
 
-The 0100 test engineer may have already set up Vitest and Playwright. Check if test infrastructure exists before adding your own. If it does, extend it. If not, set it up.
+You are running in parallel with the 0100 test engineer. They are setting up their own test infrastructure at the same time. To avoid conflicts:
+
+- Set up your own Vitest and Playwright config if it doesn't exist yet. If it already exists, extend it.
+- Put your test files in clearly separate locations (e.g., `tests/0200/` or `tests/multi-terminal/`).
+- Only run your own tests — don't run the full test suite, just your files.
 
 0200 has both small (Vitest) and medium (Playwright + Electron) tests. The `.test.md` specifies exactly which is which and how to verify each.
 
