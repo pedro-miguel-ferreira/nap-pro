@@ -10,6 +10,16 @@ Agent. Implements and runs the tests designed by the test architect.
 - Run the tests
 - Report failures with specifics: what failed, expected vs actual, which seam broke
 
+## Testing Stack
+
+- **Small tests**: Vitest + jsdom. Pure logic — store actions, data transforms, registries.
+- **Medium tests**: Playwright + Electron. Real app, driven programmatically:
+  - `page.evaluate()` — run code inside the real renderer (access store, xterm buffers, DOM)
+  - `app.evaluate()` — run code inside the main process (pty state, IPC)
+  - `page.waitForFunction()` — poll renderer state for async assertions (pty output arrival)
+  - No UI automation. Drive behavior through store actions and IPC, not button clicks.
+- Test cases marked "manual" in `.test.md` — skip, note in response.md.
+
 ## Operating Principles
 
 - All test code is TypeScript. No `.js` or `.jsx` files.
