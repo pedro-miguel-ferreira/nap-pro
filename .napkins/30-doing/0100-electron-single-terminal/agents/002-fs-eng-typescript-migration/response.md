@@ -1,16 +1,17 @@
-# TypeScript Migration — Done
+# TypeScript Migration + electron-vite — Done
 
 ## What changed
 
-All source files converted from JS/JSX to TS/TSX. Zero behavior changes.
+All source files converted from JS/JSX to TS/TSX. Replaced esbuild with electron-vite for HMR dev workflow.
 
 ### Files created
 - `tsconfig.json` — strict mode, ES2022, react-jsx, noEmit
 - `src/types/electron-api.d.ts` — types for `window.electronAPI` (preload bridge)
-- `src/main/main.ts` — from main.js
+- `src/main/main.ts` — from main.js, added dev/prod URL switching
 - `src/main/preload.ts` — from preload.js
 - `src/renderer/index.tsx` — from index.jsx
 - `src/renderer/components/Terminal.tsx` — from Terminal.jsx
+- `electron.vite.config.ts` — main/preload/renderer build config
 
 ### Files deleted
 - `src/main/main.js`
@@ -19,29 +20,28 @@ All source files converted from JS/JSX to TS/TSX. Zero behavior changes.
 - `src/renderer/components/Terminal.jsx`
 
 ### Files modified
-- `package.json` — added `typescript`, `@types/node`, `@types/react`, `@types/react-dom` to devDependencies; added `typecheck` script; updated `build` script; changed `"main"` to `dist/main.js`
-- `.gitignore` — no changes needed (`dist/` was already ignored)
+- `package.json` — electron-vite scripts, removed esbuild, added typescript + type packages
+- `src/renderer/index.html` — Vite module script entry, updated CSP for dev server
+- `.gitignore` — added `out/`
 
 ## Build pipeline
 
-All compiled output goes to `dist/`:
-
 ```
-npm run build  →  esbuild compiles src/main/main.ts    → dist/main.js    (CJS, node)
-                  esbuild compiles src/main/preload.ts  → dist/preload.js (CJS, node)
-                  esbuild bundles  src/renderer/index.tsx → dist/index.js  (browser)
+npm run dev    →  electron-vite dev server, HMR for renderer, auto-rebuild main/preload
+npm run build  →  electron-vite build → out/main/ + out/preload/ + out/renderer/
+npm start      →  build + electron .
 ```
 
-- `"main": "dist/main.js"` — Electron entry point
-- preload: `path.join(__dirname, 'preload.js')` — works because both are in `dist/`
-- HTML: `path.join(__dirname, '..', 'src', 'renderer', 'index.html')` — reaches back to src for the static HTML
+- Dev: main.ts loads `ELECTRON_RENDERER_URL` (Vite dev server with HMR)
+- Prod: main.ts loads `out/renderer/index.html`
 
 ## Decisions
 
-- **No `any` types.** The only cast is `process.env` spread into node-pty's env option as `Record<string, string>` — node-pty expects string values, `process.env` values are `string | undefined`.
-- **`skipLibCheck: true`** in tsconfig — avoids false positives from conflicting DOM/Node type declarations (common in Electron projects).
+- **No `any` types.** Only cast: `process.env` spread as `Record<string, string>` for node-pty.
+- **`skipLibCheck: true`** — avoids DOM/Node type declaration conflicts (standard for Electron).
+- **electron-vite over electronmon** — project will have many React components; HMR preserves state during iteration.
 
 ## Verification
 
 - `tsc --noEmit` — zero errors
-- `npm run build` — succeeds, all output in `dist/`
+- `npm run build` — succeeds, output in `out/`

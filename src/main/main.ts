@@ -17,13 +17,18 @@ function createWindow(): void {
     backgroundColor: '#1e1e1e',
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
+  const devUrl = process.env['ELECTRON_RENDERER_URL'];
+  if (devUrl) {
+    mainWindow.loadURL(devUrl);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  }
 
   mainWindow.once('ready-to-show', () => {
     mainWindow!.show();

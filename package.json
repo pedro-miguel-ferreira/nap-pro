@@ -2,18 +2,19 @@
   "name": "nap",
   "version": "0.1.0",
   "description": "NAP — Napkin Agent Protocol",
-  "main": "dist/main.js",
+  "main": "out/main/main.js",
   "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
     "start": "npm run build && electron .",
-    "build": "esbuild src/main/main.ts --outfile=dist/main.js --platform=node --format=cjs && esbuild src/main/preload.ts --outfile=dist/preload.js --platform=node --format=cjs && esbuild src/renderer/index.tsx --bundle --outdir=dist --jsx=automatic --platform=browser --target=chrome120",
     "typecheck": "tsc --noEmit",
     "postinstall": "electron-rebuild"
   },
   "dependencies": {
-    "@xterm/xterm": "^5.0.0",
-    "@xterm/addon-webgl": "^0.18.0",
     "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.0.0",
     "node-pty": "^1.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
@@ -23,8 +24,9 @@
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
     "electron": "^33.0.0",
-    "esbuild": "^0.24.0",
+    "electron-vite": "^5.0.0",
     "typescript": "^5.6.0"
   }
 }
