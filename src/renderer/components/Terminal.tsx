@@ -5,7 +5,7 @@ import { CanvasAddon } from '@xterm/addon-canvas';
 import { FitAddon } from '@xterm/addon-fit';
 
 export function Terminal() {
-  const containerRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const term = new XTerm({
@@ -25,7 +25,7 @@ export function Terminal() {
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
-    term.open(containerRef.current);
+    term.open(containerRef.current!);
 
     // WebGL renderer with canvas fallback
     try {
@@ -51,18 +51,18 @@ export function Terminal() {
     fitAddon.fit();
 
     // IPC: pty output → xterm
-    const removeDataListener = window.electronAPI.pty.onData((data) => {
+    const removeDataListener = window.electronAPI.pty.onData((data: string) => {
       term.write(data);
     });
 
     // IPC: pty exit → show message, disable input
-    const removeExitListener = window.electronAPI.pty.onExit((exitCode) => {
+    const removeExitListener = window.electronAPI.pty.onExit((exitCode: number) => {
       term.write(`\r\n\r\n[process exited with code ${exitCode}]`);
       term.options.disableStdin = true;
     });
 
     // xterm input → pty
-    const inputDisposable = term.onData((data) => {
+    const inputDisposable = term.onData((data: string) => {
       window.electronAPI.pty.write(data);
     });
 
@@ -71,7 +71,7 @@ export function Terminal() {
     window.electronAPI.pty.ready();
 
     // Resize with 100ms debounce
-    let resizeTimer;
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     const onResize = () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {

@@ -6,4 +6,4 @@ function App() {
   return <Terminal />;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')!).render(<App />);

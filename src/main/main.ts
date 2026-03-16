@@ -1,13 +1,14 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
-const path = require('path');
-const pty = require('node-pty');
+import { app, BrowserWindow, ipcMain, IpcMainEvent } from 'electron';
+import * as path from 'path';
+import type { IPty } from 'node-pty';
+import * as pty from 'node-pty';
 
-let mainWindow = null;
-let ptyProcess = null;
-let outputBuffer = [];
+let mainWindow: BrowserWindow | null = null;
+let ptyProcess: IPty | null = null;
+let outputBuffer: string[] = [];
 let rendererReady = false;
 
-function createWindow() {
+function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
@@ -22,10 +23,10 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    mainWindow!.show();
   });
 
   const cwd = process.cwd();
@@ -45,7 +46,7 @@ function createWindow() {
   });
 }
 
-function spawnPty(cwd) {
+function spawnPty(cwd: string): void {
   const shell = process.env.SHELL || '/bin/zsh';
 
   ptyProcess = pty.spawn(shell, ['--login'], {
@@ -53,10 +54,10 @@ function spawnPty(cwd) {
     cols: 80,
     rows: 24,
     cwd,
-    env: { ...process.env, TERM: 'xterm-256color' },
+    env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
   });
 
-  ptyProcess.onData((data) => {
+  ptyProcess.onData((data: string) => {
     if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('pty:data', data);
     } else {
@@ -64,7 +65,7 @@ function spawnPty(cwd) {
     }
   });
 
-  ptyProcess.onExit(({ exitCode }) => {
+  ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('pty:exit', exitCode);
     }
@@ -84,14 +85,14 @@ ipcMain.on('pty:ready', () => {
 });
 
 // IPC: renderer input → pty
-ipcMain.on('pty:write', (_, data) => {
+ipcMain.on('pty:write', (_event: IpcMainEvent, data: string) => {
   if (ptyProcess) {
     ptyProcess.write(data);
   }
 });
 
 // IPC: renderer resize → pty
-ipcMain.on('pty:resize', (_, cols, rows) => {
+ipcMain.on('pty:resize', (_event: IpcMainEvent, cols: number, rows: number) => {
   if (ptyProcess) {
     ptyProcess.resize(cols, rows);
   }
