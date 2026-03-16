@@ -8,9 +8,9 @@
     "build": "electron-vite build",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
-    "test:0100:medium": "npm run build && npx playwright test --config playwright.config.ts",
-    "test:0200:small": "vitest run --config tests/0200/vitest.config.ts",
-    "test:0200:medium": "npx playwright test --config tests/0200/playwright.config.ts",
+    "test:small": "vitest run",
+    "test:medium": "npm run build && npx playwright test",
+    "test": "npm run test:small && npm run test:medium",
     "postinstall": "electron-rebuild"
   },
   "dependencies": {

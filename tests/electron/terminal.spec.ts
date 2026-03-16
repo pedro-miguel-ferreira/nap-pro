@@ -5,62 +5,9 @@ import {
 } from '@playwright/test';
 import type { ElectronApplication, Page } from 'playwright-core';
 import * as path from 'path';
+import { waitForShellReady, getActiveId, waitForText } from '../helpers';
 
 const APP_DIR = path.join(__dirname, '..', '..');
-
-// ---------------------------------------------------------------------------
-// Helper: wait for shell to produce at least one non-empty line (prompt)
-// ---------------------------------------------------------------------------
-async function waitForShellReady(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => {
-      const id = (window as any).useTerminalStore?.getState()?.activeTerminalId;
-      if (!id) return false;
-      const entry = (window as any).getTerminal(id);
-      if (!entry) return false;
-      const buf = entry.terminal.buffer.active;
-      for (let i = 0; i < buf.length; i++) {
-        if (buf.getLine(i)?.translateToString().trim()) return true;
-      }
-      return false;
-    },
-    undefined,
-    { timeout: 15_000 },
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Helper: get active terminal ID
-// ---------------------------------------------------------------------------
-async function activeId(page: Page): Promise<string> {
-  return page.evaluate(
-    () => (window as any).useTerminalStore.getState().activeTerminalId,
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Helper: wait for text to appear anywhere in the xterm buffer
-// ---------------------------------------------------------------------------
-async function waitForText(
-  page: Page,
-  id: string,
-  text: string,
-  timeout = 10_000,
-): Promise<void> {
-  await page.waitForFunction(
-    ([id, text]: [string, string]) => {
-      const entry = (window as any).getTerminal(id);
-      if (!entry) return false;
-      const buf = entry.terminal.buffer.active;
-      for (let i = 0; i < buf.length; i++) {
-        if (buf.getLine(i)?.translateToString().includes(text)) return true;
-      }
-      return false;
-    },
-    [id, text] as [string, string],
-    { timeout },
-  );
-}
 
 // ===========================================================================
 // T-0100-01 through T-0100-03, T-0100-06, T-0100-07
@@ -84,7 +31,7 @@ test.describe.serial('Electron Terminal — IPC Bridge', () => {
   // T-0100-01: pty data → IPC → xterm
   // -----------------------------------------------------------------------
   test('T-0100-01: pty data reaches xterm through IPC bridge', async () => {
-    const id = await activeId(page);
+    const id = await getActiveId(page);
 
     // echo hello — basic data path
     await page.evaluate(
@@ -106,7 +53,7 @@ test.describe.serial('Electron Terminal — IPC Bridge', () => {
   // T-0100-02: xterm input → IPC → pty (reverse path)
   // -----------------------------------------------------------------------
   test('T-0100-02: xterm input reaches pty through IPC bridge (reverse path)', async () => {
-    const id = await activeId(page);
+    const id = await getActiveId(page);
 
     // Inject input via xterm.paste (renderer → IPC → pty → echo → IPC → xterm)
     await page.evaluate((id: string) => {
@@ -138,7 +85,7 @@ test.describe.serial('Electron Terminal — IPC Bridge', () => {
   // T-0100-03: resize propagates window → xterm → pty
   // -----------------------------------------------------------------------
   test('T-0100-03: resize propagates from window to pty', async () => {
-    const id = await activeId(page);
+    const id = await getActiveId(page);
 
     const initialCols: number = await page.evaluate(
       (id: string) => (window as any).getTerminal(id).terminal.cols,
@@ -195,7 +142,7 @@ test.describe.serial('Electron Terminal — IPC Bridge', () => {
   // T-0100-06: high-throughput output
   // -----------------------------------------------------------------------
   test('T-0100-06: high-throughput output does not choke IPC bridge', async () => {
-    const id = await activeId(page);
+    const id = await getActiveId(page);
 
     const t0 = Date.now();
     await page.evaluate(
@@ -233,7 +180,7 @@ test.describe.serial('Electron Terminal — IPC Bridge', () => {
   // T-0100-07: WebGL addon happy path (fallback path is manual)
   // -----------------------------------------------------------------------
   test('T-0100-07: WebGL addon initialization (happy path)', async () => {
-    const id = await activeId(page);
+    const id = await getActiveId(page);
 
     // Terminal element exists → rendering is active
     const hasElement: boolean = await page.evaluate((id: string) => {
@@ -267,7 +214,7 @@ test.describe.serial('Electron Terminal — Pty Lifecycle', () => {
   });
 
   test('T-0100-04: pty exits but window stays alive', async () => {
-    const id = await activeId(page);
+    const id = await getActiveId(page);
 
     // Type exit to kill the shell
     await page.evaluate(
@@ -329,7 +276,7 @@ test.describe('Electron Terminal — Window Close Cleanup', () => {
     const page = await app.firstWindow();
     await waitForShellReady(page);
 
-    const id = await activeId(page);
+    const id = await getActiveId(page);
 
     // Get the shell PID via echo $$
     const pidMarker = `pid_${Date.now()}`;

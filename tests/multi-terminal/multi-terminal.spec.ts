@@ -6,6 +6,14 @@ import {
   Page,
 } from '@playwright/test';
 import path from 'path';
+import {
+  createTerminal,
+  ptyWrite,
+  bufferLength,
+  bufferLine,
+  getActiveId,
+  getTerminalMeta,
+} from '../helpers';
 
 // ---------- fixture: fresh Electron app per test ----------
 const test = base.extend<{ app: ElectronApplication; page: Page }>({
@@ -19,71 +27,14 @@ const test = base.extend<{ app: ElectronApplication; page: Page }>({
   },
   page: async ({ app }, use) => {
     const page = await app.firstWindow();
-    // Wait for first terminal to exist in store
     await page.waitForFunction(
       () => (window as any).useTerminalStore?.getState()?.terminals.length > 0,
       { timeout: 15000 },
     );
-    // Small settle for pty readiness
     await page.waitForTimeout(500);
     await use(page);
   },
 });
-
-// ---------- helpers ----------
-
-/** Create a new terminal via store, return its id */
-async function createTerminal(page: Page, name: string): Promise<string> {
-  return page.evaluate((n) => {
-    const store = (window as any).useTerminalStore;
-    const id = store.getState().createTerminal(n);
-    store.getState().setActive(id);
-    return id;
-  }, name);
-}
-
-/** Write data to a terminal's pty */
-async function ptyWrite(page: Page, id: string, data: string): Promise<void> {
-  await page.evaluate(
-    ([tid, d]) => window.electronAPI.pty.write(tid, d),
-    [id, data] as const,
-  );
-}
-
-/** Read the active buffer length of a terminal */
-async function bufferLength(page: Page, id: string): Promise<number> {
-  return page.evaluate((tid) => {
-    const entry = (window as any).getTerminal(tid);
-    return entry?.terminal.buffer.active.length ?? 0;
-  }, id);
-}
-
-/** Read a specific line from a terminal's buffer */
-async function bufferLine(page: Page, id: string, lineIndex: number): Promise<string> {
-  return page.evaluate(
-    ([tid, idx]) => {
-      const entry = (window as any).getTerminal(tid);
-      return entry?.terminal.buffer.active.getLine(idx)?.translateToString(true) ?? '';
-    },
-    [id, lineIndex] as const,
-  );
-}
-
-/** Get the active terminal id from the store */
-async function getActiveId(page: Page): Promise<string | null> {
-  return page.evaluate(() => (window as any).useTerminalStore.getState().activeTerminalId);
-}
-
-/** Get terminal metadata from store */
-async function getTerminalMeta(page: Page, id: string) {
-  return page.evaluate(
-    (tid) =>
-      (window as any).useTerminalStore
-        .getState()
-        .terminals.find((t: any) => t.id === tid),
-    id,
-  );
-}
 
 // -------------------------------------------------------
 // T-0200-01: terminal switching preserves scrollback and buffer state
