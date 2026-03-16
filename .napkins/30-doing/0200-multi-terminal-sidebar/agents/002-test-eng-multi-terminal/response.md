@@ -12,24 +12,39 @@ All 8 test cases from `.test.md` implemented. All passing. Zero type errors.
 
 | File | Tests | Runner |
 |------|-------|--------|
-| `tests/0200/store-registry.test.ts` | T-0200-07 (4 cases), T-0200-08 (4 cases) | Vitest |
-| `tests/0200/multi-terminal.spec.ts` | T-0200-01 through T-0200-06 | Playwright |
+| `tests/multi-terminal/store-registry.test.ts` | T-0200-07 (4 cases), T-0200-08 (4 cases) | Vitest |
+| `tests/multi-terminal/multi-terminal.spec.ts` | T-0200-01 through T-0200-06 | Playwright |
 
-Supporting files:
-- `tests/0200/vitest.config.ts` — vitest config (jsdom environment)
-- `tests/0200/setup.ts` — mocks for `window.electronAPI`, `@xterm/addon-webgl`, `@xterm/addon-canvas`
-- `tests/0200/playwright.config.ts` — playwright config (sequential worker)
+Shared infrastructure (consolidated with 0100):
+- `vitest.config.ts` — single root config, discovers all `tests/**/*.test.ts`
+- `playwright.config.ts` — single root config, discovers all `tests/**/*.spec.ts`
+- `tests/setup.ts` — vitest mocks for `window.electronAPI`, `@xterm/addon-webgl`, `@xterm/addon-canvas`
+- `tests/helpers.ts` — shared Playwright helpers (`waitForShellReady`, `getActiveId`, `waitForText`, `createTerminal`, `ptyWrite`, `bufferLength`, `bufferLine`, `getTerminalMeta`)
+- `tests/tsconfig.json` — extends root, covers all test files
 
 ## Run commands
 
 ```bash
-npm run test:0200:small    # vitest: store + registry tests
-npm run test:0200:medium   # playwright: full electron e2e tests (requires build first)
+npm run test:small     # vitest: all unit tests
+npm run test:medium    # build + playwright: all e2e tests (headless by default)
+npm run test:medium:headed  # same but with visible Electron windows
+npm test               # both
 ```
 
 ## Source modifications
 
-One change to `src/renderer/index.tsx`: exposed `getTerminal` and `useTerminalStore` on `window` for Playwright `page.evaluate()` access. Without this, Playwright cannot reach module-scoped functions inside the Vite bundle.
+### `src/renderer/index.tsx`
+Exposed `getTerminal` and `useTerminalStore` on `window` for Playwright `page.evaluate()` access.
+
+### `src/main/main.ts` — pty lifecycle fix
+The original code had a shutdown race condition: `pty.kill()` sends SIGHUP but doesn't wait for the child to die. During V8 teardown, node-pty's C++ ThreadSafeFunction would fire into a half-destroyed environment → SIGABRT.
+
+Fix:
+- Store `IDisposable` from `pty.onData()`/`pty.onExit()` to properly dispose listeners
+- Track `pendingExits` count (incremented on create, decremented in onExit callback)
+- On quit: kill all ptys, dispose data listeners, wait for all onExit callbacks to complete, then call `app.quit()`
+- Safety timeout (2s) prevents hanging if a pty refuses to die
+- Test teardowns call `app.evaluate(({ app }) => app.quit())` before `app.close()` so macOS sees a proper `[NSApplication terminate:]` quit
 
 ## Per-test results
 
