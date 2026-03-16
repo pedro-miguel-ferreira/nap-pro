@@ -1,4 +1,10 @@
-import type { Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
+import * as path from 'path';
+
+export const APP_DIR = path.join(__dirname, '..');
+
+/** Default Electron launch args for tests */
+export const ELECTRON_LAUNCH_ARGS = [APP_DIR];
 
 /** Wait for shell to produce at least one non-empty line (prompt ready) */
 export async function waitForShellReady(page: Page): Promise<void> {

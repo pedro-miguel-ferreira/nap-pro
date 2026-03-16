@@ -4,10 +4,7 @@ import {
   _electron as electron,
 } from '@playwright/test';
 import type { ElectronApplication, Page } from 'playwright-core';
-import * as path from 'path';
-import { waitForShellReady, getActiveId, waitForText } from '../helpers';
-
-const APP_DIR = path.join(__dirname, '..', '..');
+import { waitForShellReady, getActiveId, waitForText, ELECTRON_LAUNCH_ARGS } from '../helpers';
 
 // ===========================================================================
 // T-0100-01 through T-0100-03, T-0100-06, T-0100-07
@@ -18,13 +15,16 @@ test.describe.serial('Electron Terminal — IPC Bridge', () => {
   let page: Page;
 
   test.beforeAll(async () => {
-    app = await electron.launch({ args: [APP_DIR] });
+    app = await electron.launch({ args: ELECTRON_LAUNCH_ARGS });
     page = await app.firstWindow();
     await waitForShellReady(page);
   });
 
   test.afterAll(async () => {
-    if (app) await app.close();
+    if (app) {
+      await app.evaluate(({ app }) => app.quit());
+      await app.close();
+    }
   });
 
   // -----------------------------------------------------------------------
@@ -204,13 +204,16 @@ test.describe.serial('Electron Terminal — Pty Lifecycle', () => {
   let page: Page;
 
   test.beforeAll(async () => {
-    app = await electron.launch({ args: [APP_DIR] });
+    app = await electron.launch({ args: ELECTRON_LAUNCH_ARGS });
     page = await app.firstWindow();
     await waitForShellReady(page);
   });
 
   test.afterAll(async () => {
-    if (app) await app.close();
+    if (app) {
+      await app.evaluate(({ app }) => app.quit());
+      await app.close();
+    }
   });
 
   test('T-0100-04: pty exits but window stays alive', async () => {
@@ -272,7 +275,7 @@ test.describe.serial('Electron Terminal — Pty Lifecycle', () => {
 // ===========================================================================
 test.describe('Electron Terminal — Window Close Cleanup', () => {
   test('T-0100-05: window close kills pty cleanly', async () => {
-    const app = await electron.launch({ args: [APP_DIR] });
+    const app = await electron.launch({ args: ELECTRON_LAUNCH_ARGS });
     const page = await app.firstWindow();
     await waitForShellReady(page);
 
@@ -321,11 +324,12 @@ test.describe('Electron Terminal — Window Close Cleanup', () => {
 
     expect(shellPid).toBeTruthy();
 
-    // Close the window — triggers pty.kill() in main.ts close handler
+    // Close the window — triggers window-all-closed → pty cleanup → app.quit()
     await app.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0].close();
     });
 
+    // App quits itself via window-all-closed handler; just wait for exit
     await app.close();
 
     // Give OS a moment to reap the process

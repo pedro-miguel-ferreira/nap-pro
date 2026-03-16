@@ -5,7 +5,6 @@ import {
   ElectronApplication,
   Page,
 } from '@playwright/test';
-import path from 'path';
 import {
   createTerminal,
   ptyWrite,
@@ -13,16 +12,18 @@ import {
   bufferLine,
   getActiveId,
   getTerminalMeta,
+  ELECTRON_LAUNCH_ARGS,
 } from '../helpers';
 
 // ---------- fixture: fresh Electron app per test ----------
 const test = base.extend<{ app: ElectronApplication; page: Page }>({
   app: async ({}, use) => {
     const app = await electron.launch({
-      args: ['.'],
-      cwd: path.resolve(__dirname, '../..'),
+      args: ELECTRON_LAUNCH_ARGS,
     });
     await use(app);
+    // Quit from inside so macOS sees a proper NSApplication terminate
+    await app.evaluate(({ app }) => app.quit());
     await app.close();
   },
   page: async ({ app }, use) => {

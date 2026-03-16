@@ -1,12 +1,36 @@
 import { app, BrowserWindow, ipcMain, IpcMainEvent, Menu } from 'electron';
 import * as path from 'path';
-import type { IPty } from 'node-pty';
+import type { IPty, IDisposable } from 'node-pty';
 import * as pty from 'node-pty';
 
 let mainWindow: BrowserWindow | null = null;
-const ptys = new Map<string, IPty>();
+
+interface PtyEntry {
+  process: IPty;
+  dataDisposable: IDisposable;
+  exitDisposable: IDisposable;
+}
+
+const ptys = new Map<string, PtyEntry>();
 const outputBuffers = new Map<string, string[]>();
 const readyTerminals = new Set<string>();
+
+// Track live ptys so we can wait for them all to exit before quitting
+let pendingExits = 0;
+let quitAfterExits = false;
+
+function checkQuit(): void {
+  if (quitAfterExits && pendingExits === 0) {
+    app.quit();
+  }
+}
+
+function killAllPtys(): void {
+  for (const entry of ptys.values()) {
+    entry.dataDisposable.dispose();
+    entry.process.kill();
+  }
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -31,18 +55,11 @@ function createWindow(): void {
   }
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow!.show();
+    if (!process.env['NAP_TEST'] || process.env['HEADED']) mainWindow!.show();
   });
 
   const cwd = process.cwd();
   mainWindow.setTitle(path.basename(cwd));
-
-  mainWindow.on('close', () => {
-    for (const ptyProc of ptys.values()) {
-      ptyProc.kill();
-    }
-    ptys.clear();
-  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -115,10 +132,9 @@ ipcMain.on('pty:create', (_event: IpcMainEvent, id: string, cwd?: string) => {
     env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
   });
 
-  ptys.set(id, ptyProcess);
-  outputBuffers.set(id, []);
+  pendingExits++;
 
-  ptyProcess.onData((data: string) => {
+  const dataDisposable = ptyProcess.onData((data: string) => {
     if (readyTerminals.has(id) && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('pty:data', id, data);
     } else {
@@ -127,22 +143,28 @@ ipcMain.on('pty:create', (_event: IpcMainEvent, id: string, cwd?: string) => {
     }
   });
 
-  ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
+  const exitDisposable = ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('pty:exit', id, exitCode);
     }
     ptys.delete(id);
     outputBuffers.delete(id);
     readyTerminals.delete(id);
+    pendingExits--;
+    checkQuit();
   });
+
+  ptys.set(id, { process: ptyProcess, dataDisposable, exitDisposable });
+  outputBuffers.set(id, []);
 });
 
 // IPC: kill a pty
 ipcMain.on('pty:kill', (_event: IpcMainEvent, id: string) => {
-  const ptyProcess = ptys.get(id);
-  if (ptyProcess) {
-    ptyProcess.kill();
-    ptys.delete(id);
+  const entry = ptys.get(id);
+  if (entry) {
+    entry.dataDisposable.dispose();
+    entry.process.kill();
+    // Don't delete from map here — onExit callback handles cleanup
     outputBuffers.delete(id);
     readyTerminals.delete(id);
   }
@@ -162,12 +184,12 @@ ipcMain.on('pty:ready', (_event: IpcMainEvent, id: string) => {
 
 // IPC: renderer input → pty
 ipcMain.on('pty:write', (_event: IpcMainEvent, id: string, data: string) => {
-  ptys.get(id)?.write(data);
+  ptys.get(id)?.process.write(data);
 });
 
 // IPC: renderer resize → pty
 ipcMain.on('pty:resize', (_event: IpcMainEvent, id: string, cols: number, rows: number) => {
-  ptys.get(id)?.resize(cols, rows);
+  ptys.get(id)?.process.resize(cols, rows);
 });
 
 app.whenReady().then(() => {
@@ -176,9 +198,15 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  for (const ptyProc of ptys.values()) {
-    ptyProc.kill();
+  // Kill all ptys, then wait for their onExit callbacks to fire
+  // before quitting. This ensures node-pty's ThreadSafeFunction
+  // completes its work before V8 tears down.
+  killAllPtys();
+  if (pendingExits === 0) {
+    app.quit();
+  } else {
+    quitAfterExits = true;
+    // Safety timeout — don't hang forever if a pty refuses to die
+    setTimeout(() => app.quit(), 2000);
   }
-  ptys.clear();
-  app.quit();
 });

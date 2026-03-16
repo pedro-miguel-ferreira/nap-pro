@@ -9,7 +9,8 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "test:small": "vitest run",
-    "test:medium": "npm run build && npx playwright test",
+    "test:medium": "npm run build && NAP_TEST=1 npx playwright test",
+    "test:medium:headed": "npm run build && NAP_TEST=1 HEADED=1 npx playwright test",
     "test": "npm run test:small && npm run test:medium",
     "postinstall": "electron-rebuild"
   },
