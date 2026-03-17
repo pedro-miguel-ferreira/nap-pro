@@ -3,11 +3,15 @@
   "version": "0.1.0",
   "description": "NAP — Napkin Agent Protocol",
   "main": "out/main/main.js",
+  "bin": {
+    "nap": "out/cli/cli/nap.js"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
+    "build:cli": "tsc -p tsconfig.cli.json",
     "test:small": "vitest run",
     "test:medium": "npm run build && NAP_TEST=1 npx playwright test",
     "test:medium:headed": "npm run build && NAP_TEST=1 HEADED=1 npx playwright test",

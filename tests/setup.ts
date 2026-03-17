@@ -29,6 +29,9 @@ const mockElectronAPI = {
   },
   onToggleSidebar: vi.fn(() => vi.fn()),
   onCreateTerminal: vi.fn(() => vi.fn()),
+  onSocketTerminalCreated: vi.fn(() => vi.fn()),
+  onSocketPeek: vi.fn(() => vi.fn()),
+  onSocketTerminalClose: vi.fn(() => vi.fn()),
 };
 
 Object.defineProperty(window, 'electronAPI', {

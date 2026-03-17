@@ -37,6 +37,24 @@ function App() {
       useTerminalStore.getState().setActive(id);
     });
 
+    // Socket: new terminal created via CLI
+    const removeSocketCreate = window.electronAPI.onSocketTerminalCreated((data) => {
+      useTerminalStore.getState().addSocketTerminal(data.id, data.name, data.parentId);
+    });
+
+    // Socket: peek at terminal via CLI
+    const removeSocketPeek = window.electronAPI.onSocketPeek((data) => {
+      useTerminalStore.getState().setActive(data.id);
+      if (!useTerminalStore.getState().sidebarVisible) {
+        useTerminalStore.getState().toggleSidebar();
+      }
+    });
+
+    // Socket: close terminal via CLI
+    const removeSocketClose = window.electronAPI.onSocketTerminalClose((data) => {
+      useTerminalStore.getState().disposeTerminalOnly(data.id);
+    });
+
     // Create first terminal
     useTerminalStore.getState().createTerminal('shell');
 
@@ -45,6 +63,9 @@ function App() {
       removeExitListener();
       removeSidebarListener();
       removeCreateListener();
+      removeSocketCreate();
+      removeSocketPeek();
+      removeSocketClose();
     };
   }, []);
 
