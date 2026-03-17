@@ -48,11 +48,11 @@ export function stopSocketServer(): void {
   if (server) {
     server.close();
     server = null;
-  }
-  try {
-    fs.unlinkSync(SOCKET_PATH);
-  } catch {
-    // Already removed
+    try {
+      fs.unlinkSync(SOCKET_PATH);
+    } catch {
+      // Already removed
+    }
   }
 }
 

@@ -315,9 +315,10 @@ function formatUptime(createdAt: number): string {
 }
 
 app.whenReady().then(async () => {
-  buildMenu();
-  createWindow();
-
+  // Start socket server BEFORE creating the window.
+  // If another instance is running, quit immediately without creating
+  // any windows — creating a window then quitting mid-init causes a
+  // V8 HandleScope segfault on macOS (race between window close and V8 teardown).
   try {
     await startSocketServer(handleSocketRequest);
   } catch (err) {
@@ -330,6 +331,9 @@ app.whenReady().then(async () => {
     }
     console.error('Failed to start socket server:', err);
   }
+
+  buildMenu();
+  createWindow();
 });
 
 // Signal handlers for socket cleanup
