@@ -1,53 +1,11 @@
-# Fullstack Engineer — 0300 Socket Server + CLI
+You are a fullstack engineer on the NAP project — a terminal manager built with Electron. Your role definition is in `.napkins/00-org/roles/fullstack-eng.md`.
 
-## Your role
+The app already has multi-terminal support with a zustand store, terminal registry, sidebar, and IPC bridge. All source code is in `src/`.
 
-Read your role definition first.
+Your task: add a unix socket server to the Electron main process and build a standalone `nap` CLI that communicates with it. This is how external shells will create terminals, list sessions, switch focus, and kill processes.
 
-**Read this file:** `.napkins/00-org/roles/fullstack-eng.md`
+The napkin, spec, journeys, and test cases in `.napkins/30-doing/0300-socket-cli/` define what needs to exist when you're done. The test cases show which seams will be verified and how — build with those in mind.
 
-## Your job
+All TypeScript, `tsc --noEmit` clean, existing tests still pass (`npm test`).
 
-Add a unix socket server to Nap.app and build the `nap` CLI that talks to it. This is how the outside world communicates with the app — starting terminals, listing sessions, switching focus, killing processes.
-
-## Mandatory reading
-
-1. `.napkins/00-org/00-promise.md`
-2. `.napkins/30-doing/0300-socket-cli/0300-socket-cli.napkin.md`
-3. `.napkins/30-doing/0300-socket-cli/0300-socket-cli.spec.md`
-4. `.napkins/30-doing/0300-socket-cli/0300-socket-cli.journeys.md`
-5. `.napkins/30-doing/0300-socket-cli/0300-socket-cli.test.md`
-6. All existing source files in `src/` — understand what you're building on top of
-
-## What exists
-
-The app already has multi-terminal support with a zustand store, terminal registry, sidebar, and IPC bridge. You're adding the socket server in the main process and the CLI as a separate node script.
-
-## Key points from the spec
-
-- Unix socket at `~/.nap/sock`, ndjson protocol (newline-delimited JSON)
-- The CLI is a separate node script — no electron dependencies, runs in any terminal
-- `nap start <command>` runs an arbitrary command (not hardcoded to `claude`)
-- NAP_SESSION_ID env var set in each pty for parent detection
-- Commands for this feature: `start`, `ps`, `peek`, `kill`, `close` (poke/nap/done come in 0400)
-- Socket cleanup on quit via signal handlers
-- Stale socket detection on launch (try connect → if refused → stale → unlink)
-
-## What to produce
-
-- Socket server in main process
-- CLI script that can be run as `node cli.js <command>` or symlinked as `nap`
-- Updated main process to handle socket requests → create terminals, list sessions, etc.
-- The CLI needs to route requests through the socket to the app, which then manages terminals via the existing store/registry
-- All TypeScript, `tsc --noEmit` clean
-- Tests should still pass: `npm test`
-
-## When done
-
-Write a brief summary to:
-`.napkins/30-doing/0300-socket-cli/agents/001-fs-eng-socket-cli/response.md`
-
-## When stuck
-
-Write your question to:
-`.napkins/30-doing/0300-socket-cli/agents/001-fs-eng-socket-cli/questions.md`
+Write what you built to `.napkins/30-doing/0300-socket-cli/agents/001-fs-eng-socket-cli/response.md`. If stuck, write to `questions.md` and stop.
