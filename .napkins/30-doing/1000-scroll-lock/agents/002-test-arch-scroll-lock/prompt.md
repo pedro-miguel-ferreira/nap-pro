@@ -8,4 +8,10 @@ Key testing insight: `terminal.buffer.active.viewportY` and `baseY` are readable
 
 Write the test cases to `.napkins/30-doing/1000-scroll-lock/1000-scroll-lock.test.md`. Write a brief summary to `.napkins/30-doing/1000-scroll-lock/agents/002-test-arch-scroll-lock/response.md`.
 
-When you're done, run `nap done` to signal completion.
+When you're done, you MUST run this command in your terminal to signal completion:
+
+```
+nap done
+```
+
+This is critical — the architect is waiting on you with `nap nap`. If you don't run `nap done`, they'll be blocked.
