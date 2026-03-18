@@ -78,7 +78,7 @@
         * fixed delay between deliveries (500ms–1s)
         * sequential — don't fire next until delay elapsed
       * future: Claude Code hooks for proper delivery timing
-    * nap nap <name> [--timeout <s>]
+    * nap nap <name> `[--timeout <s>]`
       * blocks until target's status becomes "done" or "exited"
       * polls over socket every 1s
       * timeout default: 600s (10 min)
