@@ -86,8 +86,10 @@ function App() {
       window.electronAPI.sendLogResponse(data.requestId, lines);
     });
 
-    // Create first terminal
-    useTerminalStore.getState().createTerminal('shell');
+    // Create first terminal with options from --name/--command flags
+    window.electronAPI.getInitialTerminalOpts().then((opts) => {
+      useTerminalStore.getState().createTerminal(opts.name, undefined, opts.command);
+    });
 
     return () => {
       removeDataListener();

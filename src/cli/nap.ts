@@ -31,11 +31,13 @@ Flags:
 `;
 
 const COMMAND_HELP: Record<string, string> = {
-  open: `Usage: nap open [path]
+  open: `Usage: nap open [path] [--name <name>] [--command <cmd>]
 
 Launch Nap.app for a project directory.
 
   path              Project directory (default: .)
+  --name <name>     Name for the first terminal (default: shell)
+  --command <cmd>   Command to run in the first terminal (default: login shell)
   --help            Show this help
 
 Environment:
@@ -282,7 +284,14 @@ async function main(): Promise<void> {
       }
 
       // Spawn detached
-      const child = spawn(electronBin, [mainScript, '--cwd', resolvedPath], {
+      const electronArgs = [mainScript, '--cwd', resolvedPath];
+      if (flags['name'] && typeof flags['name'] === 'string') {
+        electronArgs.push('--name', flags['name']);
+      }
+      if (flags['command'] && typeof flags['command'] === 'string') {
+        electronArgs.push('--command', flags['command']);
+      }
+      const child = spawn(electronBin, electronArgs, {
         detached: true,
         stdio: 'ignore',
         cwd: resolvedPath,

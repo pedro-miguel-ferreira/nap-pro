@@ -16,7 +16,7 @@ interface TerminalStore {
   activeTerminalId: string | null;
   sidebarVisible: boolean;
 
-  createTerminal: (name: string, parentId?: string) => string;
+  createTerminal: (name: string, parentId?: string, command?: string) => string;
   addSocketTerminal: (id: string, name: string, parentId?: string | null, cwd?: string) => void;
   removeTerminal: (id: string) => void;
   disposeTerminalOnly: (id: string) => void;
@@ -31,7 +31,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   activeTerminalId: null,
   sidebarVisible: true,
 
-  createTerminal: (name: string, parentId?: string) => {
+  createTerminal: (name: string, parentId?: string, command?: string) => {
     const id = crypto.randomUUID();
 
     // Create xterm instance in registry (outside React)
@@ -52,7 +52,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     );
 
     // Request pty from main process
-    window.electronAPI.pty.create(id, { name, parentId });
+    window.electronAPI.pty.create(id, { name, parentId, command });
     window.electronAPI.pty.resize(id, entry.terminal.cols, entry.terminal.rows);
     window.electronAPI.pty.ready(id);
 

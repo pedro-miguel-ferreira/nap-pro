@@ -198,7 +198,8 @@ test('T-0200-03: background terminal receives pty output', async ({ page }) => {
   // Write to B's pty while A is active (B is hidden)
   await ptyWrite(page, termB, 'seq 1 100\n');
 
-  // Wait for B's buffer to fill — WITHOUT switching to B
+  // Wait for B's buffer to fill — WITHOUT switching to B.
+  // Check for a line that is exactly "100" (not a substring of the echoed command "seq 1 100").
   await page.waitForFunction(
     (tid) => {
       const entry = (window as any).getTerminal(tid);
@@ -206,7 +207,7 @@ test('T-0200-03: background terminal receives pty output', async ({ page }) => {
       const buf = entry.terminal.buffer.active;
       for (let i = 0; i < buf.length; i++) {
         const line = buf.getLine(i)?.translateToString(true) ?? '';
-        if (line.includes('100')) return true;
+        if (line === '100') return true;
       }
       return false;
     },
@@ -214,14 +215,14 @@ test('T-0200-03: background terminal receives pty output', async ({ page }) => {
     { timeout: 15000 },
   );
 
-  // Verify a specific line
+  // Verify a specific earlier line is also present
   const found = await page.evaluate((tid) => {
     const entry = (window as any).getTerminal(tid);
     if (!entry) return false;
     const buf = entry.terminal.buffer.active;
     for (let i = 0; i < buf.length; i++) {
       const line = buf.getLine(i)?.translateToString(true) ?? '';
-      if (line.includes('50')) return true;
+      if (line === '50') return true;
     }
     return false;
   }, termB);

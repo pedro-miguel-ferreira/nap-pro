@@ -1,5 +1,5 @@
 interface ElectronPtyAPI {
-  create: (id: string, opts?: { name?: string; parentId?: string; cwd?: string }) => void;
+  create: (id: string, opts?: { name?: string; parentId?: string; cwd?: string; command?: string }) => void;
   kill: (id: string) => void;
   close: (id: string) => void;
   ready: (id: string) => void;
@@ -25,6 +25,7 @@ interface ElectronAPI {
   ) => () => void;
   sendLogResponse: (requestId: number, lines: string[]) => void;
   openFilePath: (filePath: string) => void;
+  getInitialTerminalOpts: () => Promise<{ name: string; command?: string }>;
 }
 
 declare global {

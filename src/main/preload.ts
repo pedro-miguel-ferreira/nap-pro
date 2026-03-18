@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   pty: {
-    create: (id: string, opts?: { name?: string; parentId?: string; cwd?: string }) =>
+    create: (id: string, opts?: { name?: string; parentId?: string; cwd?: string; command?: string }) =>
       ipcRenderer.send('pty:create', id, opts),
     kill: (id: string) => ipcRenderer.send('pty:kill', id),
     close: (id: string) => ipcRenderer.send('pty:close', id),
@@ -74,4 +74,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sendLogResponse: (requestId: number, lines: string[]) =>
     ipcRenderer.send('socket:log-response', requestId, lines),
   openFilePath: (filePath: string) => ipcRenderer.send('open-file-path', filePath),
+  getInitialTerminalOpts: () => ipcRenderer.invoke('get-initial-terminal-opts') as Promise<{ name: string; command?: string }>,
 });

@@ -15,16 +15,18 @@ import { setWriter, enqueue, clearQueue } from './message-queue';
 import { getServerSocketPath } from '../shared/constants';
 import type { SocketRequest } from '../shared/protocol';
 
-// Parse --cwd from argv (passed by `nap open`)
-function parseCwdFromArgv(): string {
+// Parse --cwd and --name from argv (passed by `nap open`)
+function parseArgvFlag(flag: string): string | undefined {
   const args = process.argv;
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--cwd' && args[i + 1]) return args[i + 1];
+    if (args[i] === flag && args[i + 1]) return args[i + 1];
   }
-  return process.cwd();
+  return undefined;
 }
 
-const projectCwd = parseCwdFromArgv();
+const projectCwd = parseArgvFlag('--cwd') || process.cwd();
+const initialTerminalName = parseArgvFlag('--name') || 'shell';
+const initialTerminalCommand = parseArgvFlag('--command');
 const socketPath = getServerSocketPath(projectCwd);
 
 let mainWindow: BrowserWindow | null = null;
@@ -222,14 +224,14 @@ ipcMain.on(
   (
     _event: IpcMainEvent,
     id: string,
-    opts?: { name?: string; parentId?: string; cwd?: string },
+    opts?: { name?: string; parentId?: string; cwd?: string; command?: string },
   ) => {
     const name = opts?.name || 'shell';
     const cwd = opts?.cwd || projectCwd;
     const parentId = opts?.parentId || null;
 
     createSession({ id, name, cwd, parentId });
-    createPtyProcess(id, { cwd });
+    createPtyProcess(id, { cwd, command: opts?.command });
   },
 );
 
@@ -281,6 +283,12 @@ ipcMain.on(
     }
   },
 );
+
+// IPC: renderer queries initial terminal options (set via --name/--command flags)
+ipcMain.handle('get-initial-terminal-opts', () => ({
+  name: initialTerminalName,
+  command: initialTerminalCommand,
+}));
 
 // IPC: renderer asks to open a file path
 ipcMain.on('open-file-path', (_event: IpcMainEvent, filePath: string) => {
