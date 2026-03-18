@@ -201,6 +201,15 @@ function buildMenu(): void {
             }
           },
         },
+        {
+          label: 'Close Terminal',
+          accelerator: 'CmdOrCtrl+W',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('terminal:close-active');
+            }
+          },
+        },
       ],
     },
   ]);
@@ -227,6 +236,12 @@ ipcMain.on(
 // IPC: kill a pty
 ipcMain.on('pty:kill', (_event: IpcMainEvent, id: string) => {
   killPty(id);
+});
+
+// IPC: close a pty (kill + remove session)
+ipcMain.on('pty:close', (_event: IpcMainEvent, id: string) => {
+  killPty(id);
+  removeSession(id);
 });
 
 // IPC: renderer signals terminal is ready to receive data

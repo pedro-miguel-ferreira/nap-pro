@@ -20,6 +20,7 @@ interface TerminalStore {
   addSocketTerminal: (id: string, name: string, parentId?: string | null, cwd?: string) => void;
   removeTerminal: (id: string) => void;
   disposeTerminalOnly: (id: string) => void;
+  closeActiveTerminal: () => void;
   setActive: (id: string) => void;
   setStatus: (id: string, status: TerminalMeta['status']) => void;
   toggleSidebar: () => void;
@@ -127,6 +128,25 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         activeTerminalId = terminals.length > 0 ? terminals[0].id : null;
       }
       return { terminals, activeTerminalId };
+    });
+  },
+
+  closeActiveTerminal: () => {
+    const { activeTerminalId, terminals } = get();
+    if (!activeTerminalId) return;
+    if (terminals.length <= 1) return;
+    const active = terminals.find((t) => t.id === activeTerminalId);
+    if (!active) return;
+    if (active.status === 'running') return;
+
+    window.electronAPI.pty.close(activeTerminalId);
+    disposeTerminal(activeTerminalId);
+    set((state) => {
+      const remaining = state.terminals.filter((t) => t.id !== activeTerminalId);
+      return {
+        terminals: remaining,
+        activeTerminalId: remaining.length > 0 ? remaining[0].id : null,
+      };
     });
   },
 

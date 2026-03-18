@@ -40,6 +40,11 @@ function App() {
       useTerminalStore.getState().setActive(id);
     });
 
+    // Menu: close active terminal (Cmd+W)
+    const removeCloseListener = window.electronAPI.onCloseActiveTerminal(() => {
+      useTerminalStore.getState().closeActiveTerminal();
+    });
+
     // Socket: new terminal created via CLI
     const removeSocketCreate = window.electronAPI.onSocketTerminalCreated((data) => {
       useTerminalStore.getState().addSocketTerminal(data.id, data.name, data.parentId, data.cwd);
@@ -89,6 +94,7 @@ function App() {
       removeExitListener();
       removeSidebarListener();
       removeCreateListener();
+      removeCloseListener();
       removeSocketCreate();
       removeSocketPeek();
       removeSocketClose();

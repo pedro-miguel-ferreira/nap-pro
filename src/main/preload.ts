@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     create: (id: string, opts?: { name?: string; parentId?: string; cwd?: string }) =>
       ipcRenderer.send('pty:create', id, opts),
     kill: (id: string) => ipcRenderer.send('pty:kill', id),
+    close: (id: string) => ipcRenderer.send('pty:close', id),
     ready: (id: string) => ipcRenderer.send('pty:ready', id),
     onData: (callback: (id: string, data: string) => void) => {
       const handler = (_event: IpcRendererEvent, id: string, data: string) => callback(id, data);
@@ -30,6 +31,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = () => callback();
     ipcRenderer.on('terminal:create', handler);
     return () => ipcRenderer.removeListener('terminal:create', handler);
+  },
+  onCloseActiveTerminal: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('terminal:close-active', handler);
+    return () => ipcRenderer.removeListener('terminal:close-active', handler);
   },
   onSocketTerminalCreated: (
     callback: (data: { id: string; name: string; parentId?: string | null; cwd?: string }) => void,
