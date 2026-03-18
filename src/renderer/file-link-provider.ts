@@ -12,9 +12,13 @@ export const FILE_PATH_REGEX =
   /(?<!\w)(?:\.\/|\.\.\/|\/)?(?:[\w.-]+\/)*[\w.-]+\.\w+(?::\d+(?::\d+)?)?/g;
 
 function isUrl(text: string, startIndex: number): boolean {
-  // Check if this match is part of a URL
-  const before = text.slice(Math.max(0, startIndex - 8), startIndex);
-  return /https?:\/\/$/.test(before) || /https?:\/\/[^\s]*$/.test(before);
+  // Walk back to the start of the surrounding non-whitespace token.
+  // Include the match itself because the regex consumes the second '/'
+  // of '://' as its optional path prefix.
+  let i = startIndex - 1;
+  while (i >= 0 && text[i] !== ' ' && text[i] !== '\t') i--;
+  const token = text.slice(i + 1);
+  return /^https?:\/\//.test(token);
 }
 
 function extractPathAndLocation(match: string): { path: string; line?: number; col?: number } {
