@@ -96,7 +96,10 @@ function createPtyProcess(
     ptys.delete(id);
     outputBuffers.delete(id);
     readyTerminals.delete(id);
-    setSessionStatus(id, 'exited');
+    const session = getSession(id);
+    if (session && session.status !== 'done') {
+      setSessionStatus(id, 'exited');
+    }
     pendingExits--;
     checkQuit();
   });

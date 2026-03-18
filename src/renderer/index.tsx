@@ -23,7 +23,10 @@ function App() {
         entry.terminal.write(`\r\n\r\n[process exited with code ${exitCode}]`);
         entry.terminal.options.disableStdin = true;
       }
-      useTerminalStore.getState().setStatus(id, 'exited');
+      const current = useTerminalStore.getState().terminals.find((t) => t.id === id);
+      if (current?.status !== 'done') {
+        useTerminalStore.getState().setStatus(id, 'exited');
+      }
     });
 
     // Menu: toggle sidebar (Cmd+B)

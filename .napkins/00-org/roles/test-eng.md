@@ -28,6 +28,7 @@ Agent. Implements and runs the tests designed by the test architect.
 - If a test case is impossible to implement given the current code, write it up in `response.md` — don't hack around it.
 - Test the behavior described, not the implementation details.
 - When reporting failures, be specific: the flow, the step that broke, the actual output, why it matters.
+- When a test hinges on subtle differences (e.g., transposed characters in a string), make the difference visually obvious in the test name or description. Otherwise reviewers stare at two identical-looking strings.
 
 ## Produces
 

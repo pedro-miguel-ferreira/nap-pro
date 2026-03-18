@@ -19,7 +19,7 @@ Two bugs found and fixed during testing.
 | T-0300-02: serialize | PASS | produces valid ndjson |
 | T-0300-07: exact match | PASS | "agent-1" resolves correctly even with "agent-11" present |
 | T-0300-07: not found | PASS | returns error |
-| T-0300-07: close match | PASS | "agnet-1" → "did you mean: agent-1?" |
+| T-0300-07: close match | PASS | "agNEt-1" (transposed e/n) → "did you mean: agent-1?" |
 | T-0300-07: ambiguous | PASS | two sessions with same name → error |
 | T-0300-07: empty list | PASS | not found |
 | T-0300-08: ENOENT | PASS | no socket → "nap is not running" exit 1, no stack trace |
@@ -76,6 +76,10 @@ The CLI error handler only checks for `ENOENT` and `ECONNREFUSED`. If a regular 
 ### T-0300-05: three-level chain not tested
 
 The test case spec mentions a three-level test (grandchild's parentId = child's id). This is automatable but requires waiting for the child terminal to be ready, then running a CLI command from inside it. Given the two-level test passes and the mechanism is the same (NAP_SESSION_ID env propagation), the three-level case is low risk. Skipped to keep test runtime reasonable.
+
+## Note for Test Architect
+
+The close-match test case (T-0300-07, "agnet-1" vs "agent-1") is a good test — but the transposition is nearly invisible when reading code or test output. I updated the test name to use CAPS emphasis (`"agNEt-1"`) so the distinction jumps out. Worth keeping this in mind for future test designs that hinge on subtle string differences: make the difference visually obvious in the test name or description, otherwise reviewers will stare at two identical-looking strings wondering why one passes and the other doesn't.
 
 ## Test Files
 

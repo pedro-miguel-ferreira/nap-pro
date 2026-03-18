@@ -36,7 +36,7 @@ describe('T-0300-07: name resolution — exact, not found, ambiguous', () => {
     }
   });
 
-  test('close match: lookup "agnet-1" → error with "did you mean"', () => {
+  test('close match: lookup "agNEt-1" (transposed e/n) → error with "did you mean"', () => {
     const sessions = [makeSession('agent-1'), makeSession('agent-2')];
     const result = resolveByName(sessions, 'agnet-1');
 
