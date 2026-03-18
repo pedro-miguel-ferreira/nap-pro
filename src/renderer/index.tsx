@@ -46,7 +46,11 @@ function App() {
     });
 
     // Menu: toggle scroll lock (Cmd+G) with double-press detection
-    let lastToggleTime = 0;
+    // First press: show blue border but don't scroll (pending state).
+    // If second press within 500ms: enter read lock at saved position.
+    // If timer fires: commit to follow lock (scroll to bottom).
+    let pendingFollowTimer: ReturnType<typeof setTimeout> | undefined;
+    let savedViewportY: number | null = null;
     const removeScrollLockListener = window.electronAPI.onToggleScrollLock(() => {
       const store = useTerminalStore.getState();
       const id = store.activeTerminalId;
@@ -54,21 +58,33 @@ function App() {
       const entry = getTerminal(id);
       if (!entry) return;
 
-      const now = Date.now();
       const currentMode = entry.scrollLock.getMode();
+      const isPending = pendingFollowTimer !== undefined;
 
-      let nextMode: 'off' | 'follow' | 'read';
-      if (currentMode === 'off') {
-        nextMode = 'follow';
-      } else if (currentMode === 'follow' && now - lastToggleTime < 500) {
-        nextMode = 'read';
+      if (currentMode === 'off' && !isPending) {
+        // First press: save viewport position, show blue border, start timer
+        savedViewportY = entry.terminal.buffer.active.viewportY;
+        store.setScrollLockMode(id, 'follow');
+        pendingFollowTimer = setTimeout(() => {
+          pendingFollowTimer = undefined;
+          savedViewportY = null;
+          entry.scrollLock.setMode('follow');
+        }, 500);
+      } else if (currentMode === 'off' && isPending) {
+        // Double-press: cancel timer, enter read lock at saved position
+        clearTimeout(pendingFollowTimer);
+        pendingFollowTimer = undefined;
+        entry.scrollLock.setMode('read', savedViewportY ?? undefined);
+        store.setScrollLockMode(id, 'read');
+        savedViewportY = null;
       } else {
-        nextMode = 'off';
+        // From follow or read: go to off
+        clearTimeout(pendingFollowTimer);
+        pendingFollowTimer = undefined;
+        savedViewportY = null;
+        entry.scrollLock.setMode('off');
+        store.setScrollLockMode(id, 'off');
       }
-
-      lastToggleTime = now;
-      entry.scrollLock.setMode(nextMode);
-      store.setScrollLockMode(id, nextMode);
     });
 
     // Socket: new terminal created via CLI

@@ -124,18 +124,29 @@ describe('T5: Follow lock — onWriteParsed calls scrollToBottom', () => {
   });
 });
 
-// T6: Read lock — onScroll restores pinnedLine
-describe('T6: Read lock — onScroll restores pinnedLine', () => {
-  test('onScroll calls scrollToLine with pinned position', () => {
-    const { terminal, fireScroll } = createMockTerminal();
+// T6: Read lock — user scroll updates locked position
+describe('T6: Read lock — user scroll updates locked position', () => {
+  test('onScroll without write updates lockedY (allows user scrolling)', async () => {
+    const { terminal, fireScroll, fireWriteParsed } = createMockTerminal();
     (terminal.buffer.active as any).viewportY = 100;
     const sl = setupScrollLock(terminal);
 
     sl.setMode('read');
     (terminal.scrollToLine as ReturnType<typeof vi.fn>).mockClear();
 
+    // Simulate user scroll to line 120
+    (terminal.buffer.active as any).viewportY = 120;
     fireScroll();
-    expect(terminal.scrollToLine).toHaveBeenCalledWith(100);
+
+    // scrollToLine should NOT be called for user scroll
+    expect(terminal.scrollToLine).not.toHaveBeenCalled();
+
+    // Wait for microtask to update lockedY
+    await new Promise<void>((r) => queueMicrotask(r));
+
+    // Now a write should restore to the user's new scroll position (120)
+    fireWriteParsed();
+    expect(terminal.scrollToLine).toHaveBeenCalledWith(120);
   });
 });
 

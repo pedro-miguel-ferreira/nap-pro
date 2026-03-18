@@ -70,11 +70,19 @@ if (!this.isUserScrolling) buffer.ydisp = buffer.ybase;  // snap to bottom
 
 ### What Moves the Viewport?
 
-Only two code paths change `ydisp`:
+Three code paths change `ydisp`:
 
 1. **`BufferService.scroll()`** — new line pushes into scrollback (line feed at bottom of scroll region when scrollTop === 0). Auto-scrolls to bottom unless `isUserScrolling`.
 
 2. **`BufferService.scrollLines(disp)`** — explicit scroll from user scrollbar, API calls (`scrollToLine`, `scrollToBottom`), or keyboard.
+
+3. **User types while scrolled up** → snaps back to bottom
+   - Trigger: `CoreService.triggerDataEvent()` (line 75)
+   - Guard: `wasUserInput && scrollOnUserInput && ybase !== ydisp` (line 83)
+   - Fires `onRequestScrollToBottom`
+   - Wired in `CoreTerminal.ts:134` → `scrollToBottom(true)`
+   - Ends up going through `scrollLines()` (path 2), but trigger is distinct
+   - Controlled by `scrollOnUserInput` option (default `true`)
 
 **Cursor positioning escape sequences (CSI H, CSI A/B/C/D) do NOT change ydisp.** They only change `buffer.x` and `buffer.y`.
 
@@ -357,9 +365,140 @@ export function setupScrollLock(terminal: Terminal) {
 }
 ```
 
+---
+
+## Distinguishing User Scroll from Write Scroll
+
+Core problem: `onScroll` fires for both. No public API flag to tell them apart.
+
+### Event ordering (traced from source)
+
+**Write-triggered scroll** — single macrotask:
+```
+_innerWrite()                                        [macrotask]
+  → InputHandler.parse()
+    → BufferService.scroll()
+      → onScroll fires                               [sync]
+  → onWriteParsed fires                              [sync, same macrotask]
+→ microtasks run
+```
+
+**User scroll (wheel/trackpad)** — separate macrotask:
+```
+wheel event                                          [macrotask]
+  → Viewport._handleScroll
+    → BufferService.scrollLines
+      → onScroll fires                               [sync]
+  → (no onWriteParsed)
+→ microtasks run
+```
+
+**The seam**: write scrolls always have `onWriteParsed` after them in the same macrotask. User scrolls don't.
+
+### Using `queueMicrotask` to detect the difference
+
+Microtasks run after the current macrotask completes. So if we queue a microtask in `onScroll`, by the time it runs, `onWriteParsed` has already fired (or not):
+
+```typescript
+let lockedY: number;
+let writeJustParsed = false;
+let isRestoring = false;
+
+terminal.onScroll(() => {
+  if (isRestoring) return;                        // ignore our own restore
+  const pos = terminal.buffer.active.viewportY;
+  queueMicrotask(() => {
+    if (!writeJustParsed) lockedY = pos;          // user scroll → update saved position
+    // write scroll → don't update, onWriteParsed already restored
+  });
+});
+
+terminal.onWriteParsed(() => {
+  writeJustParsed = true;
+  queueMicrotask(() => { writeJustParsed = false; });
+  isRestoring = true;
+  terminal.scrollToLine(lockedY);                 // undo write-triggered scroll
+  isRestoring = false;
+});
+```
+
+### Three things to block
+
+| What moves viewport | How to block it |
+|---|---|
+| New output (BufferService.scroll) | `onWriteParsed` → `scrollToLine(lockedY)` |
+| User types while scrolled up | `scrollOnUserInput: false` |
+| Programmatic scrollToBottom | Don't call it (or guard with lock check) |
+
+Mouse/trackpad scroll is the ONLY thing that updates `lockedY`.
+
+---
+
+## Revised Skeleton
+
+```typescript
+import { Terminal, IDisposable } from '@xterm/xterm';
+
+export type ScrollLockMode = 'off' | 'follow' | 'free';
+
+export function setupScrollLock(terminal: Terminal) {
+  let mode: ScrollLockMode = 'off';
+  let lockedY = 0;
+  let writeJustParsed = false;
+  let isRestoring = false;
+  let savedScrollOnUserInput: boolean | undefined;
+
+  const d1 = terminal.onWriteParsed(() => {
+    if (mode === 'follow') {
+      terminal.scrollToBottom();
+    } else if (mode === 'free') {
+      writeJustParsed = true;
+      queueMicrotask(() => { writeJustParsed = false; });
+      isRestoring = true;
+      terminal.scrollToLine(lockedY);
+      isRestoring = false;
+    }
+  });
+
+  const d2 = terminal.onScroll(() => {
+    if (mode === 'follow') {
+      terminal.scrollToBottom();
+    } else if (mode === 'free' && !isRestoring) {
+      const pos = terminal.buffer.active.viewportY;
+      queueMicrotask(() => {
+        if (!writeJustParsed) lockedY = pos;
+      });
+    }
+  });
+
+  return {
+    setMode(newMode: ScrollLockMode) {
+      if (mode === newMode) return;
+
+      // Restore scrollOnUserInput when leaving a lock mode
+      if (mode !== 'off' && savedScrollOnUserInput !== undefined) {
+        terminal.options.scrollOnUserInput = savedScrollOnUserInput;
+        savedScrollOnUserInput = undefined;
+      }
+
+      mode = newMode;
+
+      if (mode === 'follow') {
+        terminal.scrollToBottom();
+      } else if (mode === 'free') {
+        lockedY = terminal.buffer.active.viewportY;
+        savedScrollOnUserInput = terminal.options.scrollOnUserInput;
+        terminal.options.scrollOnUserInput = false;
+      }
+    },
+    getMode() { return mode; },
+    dispose() { d1.dispose(); d2.dispose(); },
+  };
+}
+```
+
 ### Open questions
 
-1. Should follow lock suppress user scroll entirely (snap back immediately), or allow brief scroll then snap back on next write?
-2. Should read lock allow user to scroll (breaking lock) or force-pin?
-3. UI: keybinding? Status indicator? Which keys?
-4. Do we need `scrollOnUserInput: false` when either lock is active to prevent keypress-triggered scroll-to-bottom?
+1. UI: keybinding to toggle modes? Status indicator?
+2. Should follow lock also set `scrollOnUserInput: false` (so typing doesn't fight with manual scroll)?
+3. Naming: "free" vs "read" vs "pin" for the free-scroll lock mode?

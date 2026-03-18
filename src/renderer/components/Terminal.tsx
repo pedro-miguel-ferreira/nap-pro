@@ -87,10 +87,15 @@ export function Terminal() {
       scrollLockMode === 'follow'
         ? 'transparent transparent #2a5a9a transparent'
         : scrollLockMode === 'read'
-          ? '#8a6a2a transparent'
+          ? 'transparent #8a6a2a'
           : 'transparent',
     transition: 'border-color 0.15s ease',
+    display: 'flex',
   };
 
-  return <div ref={containerRef} style={borderStyle} />;
+  return (
+    <div style={borderStyle}>
+      <div ref={containerRef} style={{ flex: 1, minWidth: 0, minHeight: 0 }} />
+    </div>
+  );
 }

@@ -11,12 +11,11 @@ async function sendToggle(app: ElectronApplication): Promise<void> {
   await new Promise((r) => setTimeout(r, 50));
 }
 
-/** Read scroll lock mode for the active terminal */
+/** Read scroll lock mode from the store (source of truth for UI and IPC toggle) */
 async function getScrollLockMode(page: Page): Promise<string> {
   return page.evaluate(() => {
-    const id = (window as any).useTerminalStore.getState().activeTerminalId;
-    const entry = (window as any).getTerminal(id);
-    return entry.scrollLock.getMode();
+    const state = (window as any).useTerminalStore.getState();
+    return state.scrollLockModes[state.activeTerminalId] ?? 'off';
   });
 }
 
@@ -172,8 +171,8 @@ test.describe.serial('Scroll Lock — Viewport Behavior', () => {
     }, id);
   });
 
-  // T12: Read lock — programmatic scroll is overridden
-  test('T12: read lock overrides programmatic scroll', async () => {
+  // T12: Read lock — user/programmatic scroll updates locked position
+  test('T12: read lock allows non-write scrolling and updates locked position', async () => {
     const id = await getActiveId(page);
 
     // Generate scrollback
@@ -191,7 +190,7 @@ test.describe.serial('Scroll Lock — Viewport Behavior', () => {
       entry.scrollLock.setMode('read');
     }, id);
 
-    // Attempt to scroll down
+    // Scroll down by 20 lines (non-write scroll — should be allowed)
     await page.evaluate((tid) => {
       const entry = (window as any).getTerminal(tid);
       entry.terminal.scrollLines(20);
@@ -199,11 +198,21 @@ test.describe.serial('Scroll Lock — Viewport Behavior', () => {
 
     await page.waitForTimeout(100);
 
+    // Viewport should have moved (non-write scroll updates locked position)
     const viewportY = await page.evaluate((tid) => {
       const entry = (window as any).getTerminal(tid);
       return entry.terminal.buffer.active.viewportY;
     }, id);
-    expect(viewportY).toBe(50);
+    expect(viewportY).toBe(70);
+
+    // Write output — viewport should stay at the new locked position (70)
+    await writeLines(page, id!, 50);
+
+    const viewportYAfterWrite = await page.evaluate((tid) => {
+      const entry = (window as any).getTerminal(tid);
+      return entry.terminal.buffer.active.viewportY;
+    }, id);
+    expect(viewportYAfterWrite).toBe(70);
 
     await page.evaluate((tid) => {
       (window as any).getTerminal(tid).scrollLock.setMode('off');
