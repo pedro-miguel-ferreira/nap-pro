@@ -46,7 +46,9 @@ export function Terminal() {
         if (!id) return;
         const entry = getTerminal(id);
         if (!entry || !entry.opened) return;
+        const scrollY = entry.terminal.buffer.active.viewportY;
         entry.fitAddon.fit();
+        entry.terminal.scrollToLine(scrollY);
         window.electronAPI.pty.resize(id, entry.terminal.cols, entry.terminal.rows);
       }, 50);
     });
