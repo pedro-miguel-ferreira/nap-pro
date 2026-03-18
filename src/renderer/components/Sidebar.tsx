@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react';
 import { useTerminalStore, TerminalMeta } from '../store';
 
 const STATUS_COLORS: Record<TerminalMeta['status'], string> = {
@@ -11,6 +12,34 @@ export function Sidebar() {
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId);
   const setActive = useTerminalStore((s) => s.setActive);
   const createTerminal = useTerminalStore((s) => s.createTerminal);
+
+  const [filterText, setFilterText] = useState('');
+  const [filterVisible, setFilterVisible] = useState(false);
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  // Cmd+K handler
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setFilterVisible(true);
+        setTimeout(() => filterInputRef.current?.focus(), 0);
+      }
+      if (e.key === 'Escape' && filterVisible) {
+        e.preventDefault();
+        setFilterText('');
+        setFilterVisible(false);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [filterVisible]);
+
+  const filteredTerminals = filterText
+    ? terminals.filter((t) =>
+        t.name.toLowerCase().includes(filterText.toLowerCase()),
+      )
+    : terminals;
 
   return (
     <div
@@ -63,8 +92,31 @@ export function Sidebar() {
           +
         </button>
       </div>
+      {filterVisible && (
+        <div style={{ padding: '4px 8px', borderBottom: '1px solid #3c3c3c' }}>
+          <input
+            ref={filterInputRef}
+            data-testid="sidebar-filter"
+            type="text"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            placeholder="Filter..."
+            style={{
+              width: '100%',
+              padding: '4px 8px',
+              backgroundColor: '#3c3c3c',
+              border: '1px solid #555',
+              borderRadius: 3,
+              color: '#cccccc',
+              fontSize: 12,
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+      )}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {terminals.map((t) => (
+        {filteredTerminals.map((t) => (
           <AgentCard
             key={t.id}
             terminal={t}
@@ -94,6 +146,7 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
+      data-testid="agent-card"
       style={{
         padding: '8px 12px',
         cursor: 'pointer',

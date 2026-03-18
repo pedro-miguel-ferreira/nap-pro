@@ -32,11 +32,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('terminal:create', handler);
   },
   onSocketTerminalCreated: (
-    callback: (data: { id: string; name: string; parentId?: string | null }) => void,
+    callback: (data: { id: string; name: string; parentId?: string | null; cwd?: string }) => void,
   ) => {
     const handler = (
       _event: IpcRendererEvent,
-      data: { id: string; name: string; parentId?: string | null },
+      data: { id: string; name: string; parentId?: string | null; cwd?: string },
     ) => callback(data);
     ipcRenderer.on('socket:terminal-created', handler);
     return () => ipcRenderer.removeListener('socket:terminal-created', handler);
@@ -57,4 +57,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('socket:status-changed', handler);
     return () => ipcRenderer.removeListener('socket:status-changed', handler);
   },
+  onLogRequest: (callback: (data: { id: string; requestId: number }) => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      data: { id: string; requestId: number },
+    ) => callback(data);
+    ipcRenderer.on('socket:log-request', handler);
+    return () => ipcRenderer.removeListener('socket:log-request', handler);
+  },
+  sendLogResponse: (requestId: number, lines: string[]) =>
+    ipcRenderer.send('socket:log-response', requestId, lines),
+  openFilePath: (filePath: string) => ipcRenderer.send('open-file-path', filePath),
 });

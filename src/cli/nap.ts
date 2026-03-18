@@ -1,39 +1,128 @@
 #!/usr/bin/env node
 
 import * as net from 'net';
+import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
+import { spawn } from 'child_process';
 import { NdjsonParser, serialize } from '../shared/ndjson';
-import { SOCKET_PATH } from '../shared/constants';
+import { findSocketPath, isSocketAlive } from '../shared/constants';
 
-function send(request: Record<string, unknown>): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const conn = net.createConnection(SOCKET_PATH);
+// --- Help text ---
 
-    conn.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT' || err.code === 'ECONNREFUSED') {
-        process.stderr.write('nap is not running\n');
-        process.exit(1);
-      }
-      reject(err);
-    });
+const HELP_TEXT = `nap — Napkin Agent Protocol
 
-    const parser = new NdjsonParser((msg) => {
-      resolve(msg as Record<string, unknown>);
-      conn.destroy();
-    });
+Usage: nap <command> [options]
 
-    conn.on('data', (chunk) => parser.feed(chunk.toString()));
-    conn.on('connect', () => {
-      conn.write(serialize(request));
-    });
-  });
-}
+Commands:
+  open [path]       Launch Nap.app for a project directory
+  start <command>   Start a new agent session
+  ps                List all sessions
+  log <name>        Dump terminal scrollback to stdout
+  peek <name>       Focus a terminal in the UI
+  kill <name>       Kill a session's process
+  close <name>      Close a session (kill + remove)
+  poke <name> <msg> Send input to a running session
+  nap <name>        Wait for a session to complete
+  done [message]    Mark current session as done
+
+Flags:
+  --help            Show help
+`;
+
+const COMMAND_HELP: Record<string, string> = {
+  open: `Usage: nap open [path]
+
+Launch Nap.app for a project directory.
+
+  path              Project directory (default: .)
+  --help            Show this help
+
+Environment:
+  NAP_APP_PATH      Path to nap-app directory (default: ~/nap-app)
+`,
+  start: `Usage: nap start <command> [--name <name>] [--cwd <path>]
+
+Start a new agent session.
+
+  command           Shell command to run
+  --name <name>     Session name (default: agent-N)
+  --cwd <path>      Working directory (default: project cwd)
+  --help            Show this help
+`,
+  ps: `Usage: nap ps [--json]
+
+List all sessions.
+
+  --json            Output raw JSON (no colors, no table)
+  --help            Show this help
+`,
+  log: `Usage: nap log <name>
+
+Dump terminal scrollback to stdout.
+
+  name              Session name
+  --help            Show this help
+`,
+  peek: `Usage: nap peek <name>
+
+Focus a terminal in the UI.
+
+  name              Session name
+  --help            Show this help
+`,
+  kill: `Usage: nap kill <name>
+
+Kill a session's process.
+
+  name              Session name
+  --help            Show this help
+`,
+  close: `Usage: nap close <name>
+
+Close a session (kill + remove from list).
+
+  name              Session name
+  --help            Show this help
+`,
+  poke: `Usage: nap poke <name> <message>
+
+Send input to a running session.
+
+  name              Session name
+  message           Text to send
+  --help            Show this help
+`,
+  nap: `Usage: nap nap <name> [--timeout <seconds>]
+
+Wait for a session to complete.
+
+  name              Session name
+  --timeout <secs>  Max wait time (default: 600)
+  --help            Show this help
+`,
+  done: `Usage: nap done [message]
+
+Mark the current session as done (must be running inside nap).
+
+  message           Optional done message
+  --help            Show this help
+`,
+};
+
+// --- Arg parsing ---
 
 function parseArgs(argv: string[]): {
   command: string;
   args: string[];
   flags: Record<string, string | boolean>;
 } {
-  const command = argv[0] || 'help';
+  // Check for top-level --help before any command
+  if (argv.length === 0 || argv[0] === '--help') {
+    return { command: 'help', args: [], flags: {} };
+  }
+
+  const command = argv[0];
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
 
@@ -56,6 +145,49 @@ function parseArgs(argv: string[]): {
   return { command, args: positional, flags };
 }
 
+// --- Socket communication ---
+
+function send(
+  socketPath: string,
+  request: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const conn = net.createConnection(socketPath);
+
+    conn.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT' || err.code === 'ECONNREFUSED') {
+        process.stderr.write('nap is not running\n');
+        process.exit(1);
+      }
+      reject(err);
+    });
+
+    const parser = new NdjsonParser((msg) => {
+      resolve(msg as Record<string, unknown>);
+      conn.destroy();
+    });
+
+    conn.on('data', (chunk) => parser.feed(chunk.toString()));
+    conn.on('connect', () => {
+      conn.write(serialize(request));
+    });
+  });
+}
+
+function resolveSocketOrDie(): string {
+  // Allow NAP_SOCKET env override for testing
+  if (process.env['NAP_SOCKET']) return process.env['NAP_SOCKET'];
+
+  const found = findSocketPath(process.cwd());
+  if (!found) {
+    process.stderr.write('no nap project found (run `nap open` in a project directory)\n');
+    process.exit(1);
+  }
+  return found;
+}
+
+// --- Formatting ---
+
 interface SessionRow {
   id: string;
   name: string;
@@ -65,36 +197,107 @@ interface SessionRow {
   uptime: string;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  running: '\x1b[32m',
+  exited: '\x1b[90m',
+  done: '\x1b[34m',
+};
+const RESET = '\x1b[0m';
+
+function coloredStatus(status: string): string {
+  const color = STATUS_COLORS[status] || '';
+  return `${color}\u25cf${RESET} ${status}`;
+}
+
+function printTable(header: string[], rows: string[][], displayRows?: string[][]): void {
+  // Use displayRows for visual width calc if provided (for ANSI-colored strings)
+  const measureRows = displayRows || rows;
+  const widths = header.map((h, i) => {
+    const colValues = [h, ...measureRows.map((r) => r[i] || '')];
+    return Math.max(...colValues.map((v) => v.length));
+  });
+
+  const formatRow = (row: string[], measure: string[]) =>
+    row.map((cell, i) => cell + ' '.repeat(Math.max(0, widths[i] - measure[i].length))).join('  ');
+
+  process.stdout.write(formatRow(header, header) + '\n');
+  for (let r = 0; r < rows.length; r++) {
+    process.stdout.write(formatRow(rows[r], measureRows[r]) + '\n');
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function printTable(header: string[], rows: string[][]): void {
-  const widths = header.map((h, i) => {
-    const colValues = [h, ...rows.map((r) => r[i] || '')];
-    return Math.max(...colValues.map((v) => v.length));
-  });
-
-  const formatRow = (row: string[]) =>
-    row.map((cell, i) => cell.padEnd(widths[i])).join('  ');
-
-  process.stdout.write(formatRow(header) + '\n');
-  for (const row of rows) {
-    process.stdout.write(formatRow(row) + '\n');
-  }
-}
+// --- Main ---
 
 async function main(): Promise<void> {
   const { command, args, flags } = parseArgs(process.argv.slice(2));
   let requestId = 1;
 
+  // Handle --help for any command
+  if (flags['help'] && command !== 'help') {
+    const helpText = COMMAND_HELP[command];
+    if (helpText) {
+      process.stdout.write(helpText);
+      process.exit(0);
+    }
+    // Unknown command with --help falls through to generic help
+    process.stdout.write(HELP_TEXT);
+    process.exit(0);
+  }
+
   switch (command) {
+    case 'help': {
+      process.stdout.write(HELP_TEXT);
+      process.exit(0);
+      break;
+    }
+
+    case 'open': {
+      const rawPath = args[0] || '.';
+      const resolvedPath = path.resolve(process.cwd(), rawPath);
+
+      // Check if already running
+      const candidateSocket = path.join(resolvedPath, '.nap', 'sock');
+      if (fs.existsSync(candidateSocket)) {
+        const alive = await isSocketAlive(candidateSocket);
+        if (alive) {
+          process.stderr.write('nap is already running in this project\n');
+          process.exit(1);
+        }
+      }
+
+      // Find electron binary
+      const napAppPath =
+        process.env['NAP_APP_PATH'] || path.join(os.homedir(), 'nap-app');
+      const electronBin = path.join(napAppPath, 'node_modules', '.bin', 'electron');
+      const mainScript = path.join(napAppPath, 'out', 'main', 'main.js');
+
+      if (!fs.existsSync(electronBin)) {
+        process.stderr.write(`electron not found at ${electronBin}\n`);
+        process.stderr.write('set NAP_APP_PATH to your nap-app directory\n');
+        process.exit(1);
+      }
+
+      // Spawn detached
+      const child = spawn(electronBin, [mainScript, '--cwd', resolvedPath], {
+        detached: true,
+        stdio: 'ignore',
+        cwd: resolvedPath,
+      });
+      child.unref();
+      break;
+    }
+
     case 'start': {
       if (!args[0]) {
         process.stderr.write('Usage: nap start <command> [--name <name>] [--cwd <path>]\n');
         process.exit(1);
       }
-      const res = await send({
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, {
         type: 'start',
         id: requestId++,
         command: args[0],
@@ -111,7 +314,8 @@ async function main(): Promise<void> {
     }
 
     case 'ps': {
-      const res = await send({ type: 'ps', id: requestId++ });
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, { type: 'ps', id: requestId++ });
       if (res['error']) {
         process.stderr.write(String(res['message']) + '\n');
         process.exit(1);
@@ -122,8 +326,36 @@ async function main(): Promise<void> {
         process.stdout.write(JSON.stringify(sessions, null, 2) + '\n');
       } else {
         const header = ['NAME', 'STATUS', 'PARENT', 'CWD', 'UPTIME'];
-        const rows = sessions.map((s) => [s.name, s.status, s.parent, s.cwd, s.uptime]);
-        printTable(header, rows);
+        const plainStatus = (s: string) => `\u25cf ${s}`;
+        const displayRows = sessions.map((s) => [
+          s.name, plainStatus(s.status), s.parent, s.cwd, s.uptime,
+        ]);
+        const coloredRows = sessions.map((s) => [
+          s.name,
+          coloredStatus(s.status),
+          s.parent,
+          s.cwd,
+          s.uptime,
+        ]);
+        printTable(header, coloredRows, displayRows);
+      }
+      break;
+    }
+
+    case 'log': {
+      if (!args[0]) {
+        process.stderr.write('Usage: nap log <name>\n');
+        process.exit(1);
+      }
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, { type: 'log', id: requestId++, name: args[0] });
+      if (res['error']) {
+        process.stderr.write(String(res['message']) + '\n');
+        process.exit(1);
+      }
+      const lines = res['lines'] as string[];
+      for (const line of lines) {
+        process.stdout.write(line + '\n');
       }
       break;
     }
@@ -133,7 +365,8 @@ async function main(): Promise<void> {
         process.stderr.write('Usage: nap peek <name>\n');
         process.exit(1);
       }
-      const res = await send({ type: 'peek', id: requestId++, name: args[0] });
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, { type: 'peek', id: requestId++, name: args[0] });
       if (res['error']) {
         process.stderr.write(String(res['message']) + '\n');
         process.exit(1);
@@ -146,7 +379,8 @@ async function main(): Promise<void> {
         process.stderr.write('Usage: nap kill <name>\n');
         process.exit(1);
       }
-      const res = await send({ type: 'kill', id: requestId++, name: args[0] });
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, { type: 'kill', id: requestId++, name: args[0] });
       if (res['error']) {
         process.stderr.write(String(res['message']) + '\n');
         process.exit(1);
@@ -159,7 +393,8 @@ async function main(): Promise<void> {
         process.stderr.write('Usage: nap close <name>\n');
         process.exit(1);
       }
-      const res = await send({ type: 'close', id: requestId++, name: args[0] });
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, { type: 'close', id: requestId++, name: args[0] });
       if (res['error']) {
         process.stderr.write(String(res['message']) + '\n');
         process.exit(1);
@@ -172,7 +407,8 @@ async function main(): Promise<void> {
         process.stderr.write('Usage: nap poke <name> <message>\n');
         process.exit(1);
       }
-      const res = await send({
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, {
         type: 'poke',
         id: requestId++,
         name: args[0],
@@ -190,13 +426,13 @@ async function main(): Promise<void> {
         process.stderr.write('Usage: nap nap <name> [--timeout <seconds>]\n');
         process.exit(1);
       }
+      const sock = resolveSocketOrDie();
       const name = args[0];
       const timeout = flags['timeout'] ? Number(flags['timeout']) : 600;
       const deadline = Date.now() + timeout * 1000;
 
-      // Poll loop: check status every 1s
       while (true) {
-        const res = await send({ type: 'status', id: requestId++, name });
+        const res = await send(sock, { type: 'status', id: requestId++, name });
         if (res['error']) {
           process.stderr.write(String(res['message']) + '\n');
           process.exit(1);
@@ -227,8 +463,9 @@ async function main(): Promise<void> {
         process.stderr.write('not running inside nap\n');
         process.exit(1);
       }
+      const sock = resolveSocketOrDie();
       const message = args[0] || '';
-      const res = await send({
+      const res = await send(sock, {
         type: 'done',
         id: requestId++,
         sessionId,
@@ -243,7 +480,7 @@ async function main(): Promise<void> {
 
     default:
       process.stderr.write(`Unknown command: ${command}\n`);
-      process.stderr.write('Commands: start, ps, peek, kill, close, poke, nap, done\n');
+      process.stdout.write(HELP_TEXT);
       process.exit(1);
   }
 }

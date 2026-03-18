@@ -50,6 +50,12 @@ export interface DoneRequest {
   message: string;
 }
 
+export interface LogRequest {
+  type: 'log';
+  id: number;
+  name: string;
+}
+
 export type SocketRequest =
   | StartRequest
   | PsRequest
@@ -58,4 +64,5 @@ export type SocketRequest =
   | CloseRequest
   | PokeRequest
   | StatusRequest
-  | DoneRequest;
+  | DoneRequest
+  | LogRequest;

@@ -42,7 +42,7 @@ function App() {
 
     // Socket: new terminal created via CLI
     const removeSocketCreate = window.electronAPI.onSocketTerminalCreated((data) => {
-      useTerminalStore.getState().addSocketTerminal(data.id, data.name, data.parentId);
+      useTerminalStore.getState().addSocketTerminal(data.id, data.name, data.parentId, data.cwd);
     });
 
     // Socket: peek at terminal via CLI
@@ -63,6 +63,24 @@ function App() {
       useTerminalStore.getState().setStatus(data.id, data.status as 'done');
     });
 
+    // Socket: log buffer request
+    const removeLogRequest = window.electronAPI.onLogRequest((data) => {
+      const entry = getTerminal(data.id);
+      if (!entry) {
+        window.electronAPI.sendLogResponse(data.requestId, []);
+        return;
+      }
+      const buffer = entry.terminal.buffer.active;
+      const lines: string[] = [];
+      for (let i = 0; i < buffer.length; i++) {
+        const line = buffer.getLine(i);
+        if (line) lines.push(line.translateToString(true));
+      }
+      // Trim trailing empty lines
+      while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+      window.electronAPI.sendLogResponse(data.requestId, lines);
+    });
+
     // Create first terminal
     useTerminalStore.getState().createTerminal('shell');
 
@@ -75,6 +93,7 @@ function App() {
       removeSocketPeek();
       removeSocketClose();
       removeSocketStatus();
+      removeLogRequest();
     };
   }, []);
 

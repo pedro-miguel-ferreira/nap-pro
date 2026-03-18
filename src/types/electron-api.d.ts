@@ -13,11 +13,16 @@ interface ElectronAPI {
   onToggleSidebar: (callback: () => void) => () => void;
   onCreateTerminal: (callback: () => void) => () => void;
   onSocketTerminalCreated: (
-    callback: (data: { id: string; name: string; parentId?: string | null }) => void,
+    callback: (data: { id: string; name: string; parentId?: string | null; cwd?: string }) => void,
   ) => () => void;
   onSocketPeek: (callback: (data: { id: string }) => void) => () => void;
   onSocketTerminalClose: (callback: (data: { id: string }) => void) => () => void;
   onSocketStatusChanged: (callback: (data: { id: string; status: string }) => void) => () => void;
+  onLogRequest: (
+    callback: (data: { id: string; requestId: number }) => void,
+  ) => () => void;
+  sendLogResponse: (requestId: number, lines: string[]) => void;
+  openFilePath: (filePath: string) => void;
 }
 
 declare global {

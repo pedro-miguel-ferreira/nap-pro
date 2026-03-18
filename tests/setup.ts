@@ -32,6 +32,10 @@ const mockElectronAPI = {
   onSocketTerminalCreated: vi.fn(() => vi.fn()),
   onSocketPeek: vi.fn(() => vi.fn()),
   onSocketTerminalClose: vi.fn(() => vi.fn()),
+  onSocketStatusChanged: vi.fn(() => vi.fn()),
+  onLogRequest: vi.fn(() => vi.fn()),
+  sendLogResponse: vi.fn(),
+  openFilePath: vi.fn(),
 };
 
 Object.defineProperty(window, 'electronAPI', {

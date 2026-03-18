@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, IpcMainEvent, Menu, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, IpcMainEvent, Menu, dialog, shell } from 'electron';
 import * as path from 'path';
 import type { IPty, IDisposable } from 'node-pty';
 import * as pty from 'node-pty';
@@ -12,7 +12,20 @@ import {
 } from './session-store';
 import { resolveByName } from './name-resolver';
 import { setWriter, enqueue, clearQueue } from './message-queue';
+import { getServerSocketPath } from '../shared/constants';
 import type { SocketRequest } from '../shared/protocol';
+
+// Parse --cwd from argv (passed by `nap open`)
+function parseCwdFromArgv(): string {
+  const args = process.argv;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--cwd' && args[i + 1]) return args[i + 1];
+  }
+  return process.cwd();
+}
+
+const projectCwd = parseCwdFromArgv();
+const socketPath = getServerSocketPath(projectCwd);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -62,11 +75,11 @@ function createPtyProcess(
   id: string,
   opts: { command?: string; cwd?: string },
 ): void {
-  const shell = process.env.SHELL || '/bin/zsh';
+  const userShell = process.env.SHELL || '/bin/zsh';
   const args = opts.command ? ['-c', opts.command] : ['--login'];
-  const finalCwd = opts.cwd || process.cwd();
+  const finalCwd = opts.cwd || projectCwd;
 
-  const ptyProcess = pty.spawn(shell, args, {
+  const ptyProcess = pty.spawn(userShell, args, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -134,8 +147,7 @@ function createWindow(): void {
     if (!process.env['NAP_TEST'] || process.env['HEADED']) mainWindow!.show();
   });
 
-  const cwd = process.cwd();
-  mainWindow.setTitle(path.basename(cwd));
+  mainWindow.setTitle(path.basename(projectCwd));
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -204,7 +216,7 @@ ipcMain.on(
     opts?: { name?: string; parentId?: string; cwd?: string },
   ) => {
     const name = opts?.name || 'shell';
-    const cwd = opts?.cwd || process.cwd();
+    const cwd = opts?.cwd || projectCwd;
     const parentId = opts?.parentId || null;
 
     createSession({ id, name, cwd, parentId });
@@ -239,8 +251,46 @@ ipcMain.on('pty:resize', (_event: IpcMainEvent, id: string, cols: number, rows: 
   ptys.get(id)?.process.resize(cols, rows);
 });
 
+// Pending log requests: requestId → resolve callback
+const pendingLogRequests = new Map<number, (lines: string[]) => void>();
+let logRequestCounter = 0;
+
+// IPC: renderer sends log buffer back
+ipcMain.on(
+  'socket:log-response',
+  (_event: IpcMainEvent, requestId: number, lines: string[]) => {
+    const resolve = pendingLogRequests.get(requestId);
+    if (resolve) {
+      pendingLogRequests.delete(requestId);
+      resolve(lines);
+    }
+  },
+);
+
+// IPC: renderer asks to open a file path
+ipcMain.on('open-file-path', (_event: IpcMainEvent, filePath: string) => {
+  shell.openPath(filePath);
+});
+
+function requestLogBuffer(terminalId: string): Promise<string[]> {
+  return new Promise((resolve) => {
+    const requestId = ++logRequestCounter;
+    pendingLogRequests.set(requestId, resolve);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('socket:log-request', { id: terminalId, requestId });
+    }
+    // Timeout after 5s
+    setTimeout(() => {
+      if (pendingLogRequests.has(requestId)) {
+        pendingLogRequests.delete(requestId);
+        resolve([]);
+      }
+    }, 5000);
+  });
+}
+
 // Socket request handler
-function handleSocketRequest(msg: unknown): Record<string, unknown> {
+async function handleSocketRequest(msg: unknown): Promise<Record<string, unknown>> {
   const req = msg as SocketRequest;
 
   switch (req.type) {
@@ -248,7 +298,7 @@ function handleSocketRequest(msg: unknown): Record<string, unknown> {
       const session = createSession({
         command: req.command,
         name: req.name,
-        cwd: req.cwd || process.cwd(),
+        cwd: req.cwd || projectCwd,
         parentId: req.parentId ?? null,
       });
       createPtyProcess(session.id, { command: req.command, cwd: req.cwd });
@@ -258,6 +308,7 @@ function handleSocketRequest(msg: unknown): Record<string, unknown> {
           id: session.id,
           name: session.name,
           parentId: session.parentId,
+          cwd: session.cwd,
         });
       }
 
@@ -372,6 +423,15 @@ function handleSocketRequest(msg: unknown): Record<string, unknown> {
       return { id: req.id, ok: true };
     }
 
+    case 'log': {
+      const sessions = getAllSessions();
+      const result = resolveByName(sessions, req.name);
+      if (!result.ok) return { id: req.id, error: 'not_found', message: result.error };
+
+      const lines = await requestLogBuffer(result.session.id);
+      return { id: req.id, ok: true, lines };
+    }
+
     default:
       return { id: (req as { id?: number }).id, error: 'unknown', message: 'unknown command' };
   }
@@ -392,7 +452,7 @@ app.whenReady().then(async () => {
   setWriter(writeToPty);
 
   try {
-    await startSocketServer(handleSocketRequest);
+    await startSocketServer(handleSocketRequest, socketPath);
   } catch (err) {
     if ((err as Error).message.includes('Another instance')) {
       if (!process.env['NAP_TEST']) {

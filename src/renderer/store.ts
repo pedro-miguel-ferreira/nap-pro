@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import { createTerminalInstance, disposeTerminal } from './terminal-registry';
+import { createFileLinkProvider } from './file-link-provider';
 
 export interface TerminalMeta {
   id: string;
   name: string;
   status: 'running' | 'exited' | 'done';
   parentId?: string;
+  cwd?: string;
   createdAt: number;
 }
 
@@ -15,7 +17,7 @@ interface TerminalStore {
   sidebarVisible: boolean;
 
   createTerminal: (name: string, parentId?: string) => string;
-  addSocketTerminal: (id: string, name: string, parentId?: string | null) => void;
+  addSocketTerminal: (id: string, name: string, parentId?: string | null, cwd?: string) => void;
   removeTerminal: (id: string) => void;
   disposeTerminalOnly: (id: string) => void;
   setActive: (id: string) => void;
@@ -39,6 +41,15 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       window.electronAPI.pty.write(id, data);
     });
 
+    // Register file link provider
+    entry.terminal.registerLinkProvider(
+      createFileLinkProvider(
+        entry.terminal,
+        () => get().terminals.find((t) => t.id === id)?.cwd || '/',
+        (filePath) => window.electronAPI.openFilePath(filePath),
+      ),
+    );
+
     // Request pty from main process
     window.electronAPI.pty.create(id, { name, parentId });
     window.electronAPI.pty.resize(id, entry.terminal.cols, entry.terminal.rows);
@@ -57,7 +68,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     return id;
   },
 
-  addSocketTerminal: (id: string, name: string, parentId?: string | null) => {
+  addSocketTerminal: (id: string, name: string, parentId?: string | null, cwd?: string) => {
     // Create xterm instance in registry (outside React)
     const entry = createTerminalInstance(id);
 
@@ -65,6 +76,15 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     entry.terminal.onData((data: string) => {
       window.electronAPI.pty.write(id, data);
     });
+
+    // Register file link provider
+    entry.terminal.registerLinkProvider(
+      createFileLinkProvider(
+        entry.terminal,
+        () => get().terminals.find((t) => t.id === id)?.cwd || '/',
+        (filePath) => window.electronAPI.openFilePath(filePath),
+      ),
+    );
 
     // PTY already exists in main — just signal ready
     window.electronAPI.pty.resize(id, entry.terminal.cols, entry.terminal.rows);
@@ -78,6 +98,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
           name,
           status: 'running' as const,
           parentId: parentId ?? undefined,
+          cwd,
           createdAt: Date.now(),
         },
       ],

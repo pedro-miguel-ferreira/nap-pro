@@ -2,26 +2,32 @@ import * as net from 'net';
 import * as fs from 'fs';
 import * as path from 'path';
 import { NdjsonParser, serialize } from '../shared/ndjson';
-import { SOCKET_PATH } from '../shared/constants';
+import { isSocketAlive } from '../shared/constants';
 
 export type RequestHandler = (msg: unknown) => unknown | Promise<unknown>;
 
 let server: net.Server | null = null;
+let activeSocketPath: string | null = null;
 
-export async function startSocketServer(handler: RequestHandler): Promise<void> {
+export async function startSocketServer(
+  handler: RequestHandler,
+  socketPath: string,
+): Promise<void> {
   // Ensure socket directory exists
-  const socketDir = path.dirname(SOCKET_PATH);
+  const socketDir = path.dirname(socketPath);
   fs.mkdirSync(socketDir, { recursive: true });
 
   // Handle existing socket file
-  if (fs.existsSync(SOCKET_PATH)) {
-    const alive = await isSocketAlive(SOCKET_PATH);
+  if (fs.existsSync(socketPath)) {
+    const alive = await isSocketAlive(socketPath);
     if (alive) {
       throw new Error('Another instance of Nap is already running');
     }
     // Stale socket — remove it
-    fs.unlinkSync(SOCKET_PATH);
+    fs.unlinkSync(socketPath);
   }
+
+  activeSocketPath = socketPath;
 
   server = net.createServer((conn) => {
     const parser = new NdjsonParser(async (msg) => {
@@ -40,7 +46,7 @@ export async function startSocketServer(handler: RequestHandler): Promise<void> 
 
   return new Promise<void>((resolve, reject) => {
     server!.on('error', reject);
-    server!.listen(SOCKET_PATH, () => resolve());
+    server!.listen(socketPath, () => resolve());
   });
 }
 
@@ -48,21 +54,14 @@ export function stopSocketServer(): void {
   if (server) {
     server.close();
     server = null;
-    try {
-      fs.unlinkSync(SOCKET_PATH);
-    } catch {
-      // Already removed
+    if (activeSocketPath) {
+      try {
+        fs.unlinkSync(activeSocketPath);
+      } catch {
+        // Already removed
+      }
+      activeSocketPath = null;
     }
   }
 }
 
-function isSocketAlive(socketPath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const conn = net.createConnection(socketPath);
-    conn.on('connect', () => {
-      conn.destroy();
-      resolve(true);
-    });
-    conn.on('error', () => resolve(false));
-  });
-}
