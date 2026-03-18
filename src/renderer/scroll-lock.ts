@@ -11,33 +11,33 @@ export interface ScrollLockController {
 export function setupScrollLock(terminal: Terminal): ScrollLockController {
   let mode: ScrollLockMode = 'off';
   let lockedY = 0;
-  let isRestoring = false;
-  let writeJustParsed = false;
 
   // In xterm v5, terminal.onScroll does NOT fire for user viewport scrolling
   // (suppressScrollEvent: true in Viewport._handleScroll). So we listen to
   // the DOM scroll event on the viewport element directly to detect user scrolls.
+  //
+  // Problem: scrollToLine() in onWriteParsed triggers syncScrollArea() which
+  // schedules a RAF. The RAF runs _innerRefresh which sets DOM scrollTop,
+  // firing a DOM scroll event. By the time that RAF fires, any microtask-based
+  // flag (writeJustParsed) has long been cleared.
+  //
+  // Solution: check if viewportY differs from lockedY. If it does, a real user
+  // scroll happened. If it matches, it's our own restore echoing back.
   let viewportEl: HTMLElement | null = null;
 
   function onViewportScroll(): void {
-    if (mode !== 'read' || isRestoring) return;
-    // Read viewportY after the DOM scroll has been processed by xterm
-    queueMicrotask(() => {
-      if (!writeJustParsed) {
-        lockedY = terminal.buffer.active.viewportY;
-      }
-    });
+    if (mode !== 'read') return;
+    const pos = terminal.buffer.active.viewportY;
+    if (pos !== lockedY) {
+      lockedY = pos;
+    }
   }
 
   const d1 = terminal.onWriteParsed(() => {
     if (mode === 'follow') {
       terminal.scrollToBottom();
     } else if (mode === 'read') {
-      writeJustParsed = true;
-      queueMicrotask(() => { writeJustParsed = false; });
-      isRestoring = true;
       terminal.scrollToLine(lockedY);
-      isRestoring = false;
     }
   });
 
@@ -50,7 +50,6 @@ export function setupScrollLock(terminal: Terminal): ScrollLockController {
 
   function attachViewportListener(): void {
     detachViewportListener();
-    // xterm's viewport element is .xterm-viewport, first child of terminal.element
     viewportEl = terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null;
     viewportEl?.addEventListener('scroll', onViewportScroll, { passive: true });
   }
