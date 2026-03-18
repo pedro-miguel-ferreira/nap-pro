@@ -4,6 +4,49 @@ Goal: Build two scroll lock modes — **follow lock** (viewport pinned to bottom
 
 Source: cloned xtermjs/xterm.js to `/Users/dimaunk/dvl/aibanana/xterm.js/`
 
+**WARNING — v5 vs v6 differences**: Most of this research was done against xterm.js HEAD (v6). Nap uses **v5.5.0**. The Viewport class is completely different between versions. See "v5 vs v6 Gotcha" section below for critical differences.
+
+---
+
+## v5 vs v6 Gotcha
+
+### `terminal.onScroll` does NOT fire for user scrolls in v5
+
+In v5.5.0, when the user scrolls with mouse/trackpad:
+- `Viewport._handleScroll()` fires `onRequestScrollLines({ amount, suppressScrollEvent: true })`
+  (Viewport.ts:199)
+- `BufferService.scrollLines()` checks `suppressScrollEvent` and **skips** `_onScroll.fire()`
+  (BufferService.ts:147)
+- The public `terminal.onScroll` never fires
+
+In v6, Viewport was rewritten with `SmoothScrollableElement` (VS Code scrollbar). User scrolls go through `_handleScroll` → `onRequestScrollLines` without `suppressScrollEvent`, so `onScroll` fires for everything.
+
+### Consequence for scroll lock
+
+Any approach that relies on `terminal.onScroll` to detect user scrolling **will not work in v5**.
+
+**Fix**: Listen to the DOM `scroll` event on `.xterm-viewport` directly:
+```typescript
+const viewportEl = terminal.element?.querySelector('.xterm-viewport');
+viewportEl?.addEventListener('scroll', () => {
+  queueMicrotask(() => {
+    if (!writeJustParsed) lockedY = terminal.buffer.active.viewportY;
+  });
+}, { passive: true });
+```
+
+The DOM event fires for ALL scrolls (user + programmatic). The `writeJustParsed` microtask flag still correctly filters out write-triggered ones.
+
+### Other v5 vs v6 Viewport differences
+
+| Aspect | v5.5.0 | v6 (HEAD) |
+|--------|--------|-----------|
+| Scrollbar | Native DOM scrollbar | VS Code `SmoothScrollableElement` |
+| `_handleScroll` | Fires `onRequestScrollLines` with `suppressScrollEvent: true` | Fires `onRequestScrollLines` without suppression |
+| `_innerRefresh` | Sets `viewportElement.scrollTop` directly, uses `_ignoreNextScrollEvent` flag | Uses `setScrollPosition()` on `SmoothScrollableElement` |
+| Scroll guards | `_ignoreNextScrollEvent` (boolean) | `_isHandlingScroll`, `_isSyncing`, `_suppressOnScrollHandler` |
+| Sync trigger | `syncScrollArea()` called from `onRequestSyncScrollBar` | `_sync()` called from `onScroll` + `onRender` |
+
 ---
 
 ## xterm.js Scroll Architecture
