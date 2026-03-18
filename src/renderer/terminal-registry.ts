@@ -12,7 +12,7 @@ export interface TerminalEntry {
 const registry = new Map<string, TerminalEntry>();
 
 const TERMINAL_OPTIONS = {
-  scrollback: 10000,
+  scrollback: 100000,
   cursorBlink: true,
   theme: {
     background: '#1e1e1e',
