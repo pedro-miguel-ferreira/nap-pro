@@ -2,10 +2,12 @@ import { Terminal } from '@xterm/xterm';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { CanvasAddon } from '@xterm/addon-canvas';
 import { FitAddon } from '@xterm/addon-fit';
+import { setupScrollLock, ScrollLockController } from './scroll-lock';
 
 export interface TerminalEntry {
   terminal: Terminal;
   fitAddon: FitAddon;
+  scrollLock: ScrollLockController;
   opened: boolean;
 }
 
@@ -30,9 +32,11 @@ export function createTerminalInstance(id: string): TerminalEntry {
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
 
+  const scrollLock = setupScrollLock(terminal);
+
   // Don't call open() yet — xterm buffers writes internally.
   // Will be opened when first displayed (see openTerminal).
-  const entry: TerminalEntry = { terminal, fitAddon, opened: false };
+  const entry: TerminalEntry = { terminal, fitAddon, scrollLock, opened: false };
   registry.set(id, entry);
   return entry;
 }
@@ -73,6 +77,7 @@ export function getTerminal(id: string): TerminalEntry | undefined {
 export function disposeTerminal(id: string): void {
   const entry = registry.get(id);
   if (entry) {
+    entry.scrollLock.dispose();
     entry.terminal.dispose();
     registry.delete(id);
   }

@@ -14,6 +14,7 @@ interface ElectronAPI {
   onToggleSidebar: (callback: () => void) => () => void;
   onCreateTerminal: (callback: () => void) => () => void;
   onCloseActiveTerminal: (callback: () => void) => () => void;
+  onToggleScrollLock: (callback: () => void) => () => void;
   onSocketTerminalCreated: (
     callback: (data: { id: string; name: string; parentId?: string | null; cwd?: string }) => void,
   ) => () => void;

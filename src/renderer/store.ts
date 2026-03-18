@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createTerminalInstance, disposeTerminal } from './terminal-registry';
 import { createFileLinkProvider } from './file-link-provider';
+import type { ScrollLockMode } from './scroll-lock';
 
 export interface TerminalMeta {
   id: string;
@@ -15,6 +16,7 @@ interface TerminalStore {
   terminals: TerminalMeta[];
   activeTerminalId: string | null;
   sidebarVisible: boolean;
+  scrollLockModes: Record<string, ScrollLockMode>;
 
   createTerminal: (name: string, parentId?: string, command?: string) => string;
   addSocketTerminal: (id: string, name: string, parentId?: string | null, cwd?: string) => void;
@@ -24,12 +26,14 @@ interface TerminalStore {
   setActive: (id: string) => void;
   setStatus: (id: string, status: TerminalMeta['status']) => void;
   toggleSidebar: () => void;
+  setScrollLockMode: (id: string, mode: ScrollLockMode) => void;
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   terminals: [],
   activeTerminalId: null,
   sidebarVisible: true,
+  scrollLockModes: {},
 
   createTerminal: (name: string, parentId?: string, command?: string) => {
     const id = crypto.randomUUID();
@@ -162,5 +166,11 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 
   toggleSidebar: () => {
     set((state) => ({ sidebarVisible: !state.sidebarVisible }));
+  },
+
+  setScrollLockMode: (id: string, mode: ScrollLockMode) => {
+    set((state) => ({
+      scrollLockModes: { ...state.scrollLockModes, [id]: mode },
+    }));
   },
 }));

@@ -212,6 +212,16 @@ function buildMenu(): void {
             }
           },
         },
+        { type: 'separator' },
+        {
+          label: 'Toggle Scroll Lock',
+          accelerator: 'CmdOrCtrl+G',
+          click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('scroll-lock:toggle');
+            }
+          },
+        },
       ],
     },
   ]);

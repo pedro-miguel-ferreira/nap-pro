@@ -1,10 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { useTerminalStore } from '../store';
 import { getTerminal, openTerminal } from '../terminal-registry';
+import type { ScrollLockMode } from '../scroll-lock';
 
 export function Terminal() {
   const containerRef = useRef<HTMLDivElement>(null);
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId);
+  const scrollLockMode = useTerminalStore((s) =>
+    s.activeTerminalId ? s.scrollLockModes[s.activeTerminalId] ?? 'off' : 'off',
+  ) as ScrollLockMode;
 
   // Reparent terminal DOM element when active terminal changes
   useEffect(() => {
@@ -73,5 +77,20 @@ export function Terminal() {
     };
   }, []);
 
-  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
+  const borderStyle: React.CSSProperties = {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box' as const,
+    borderWidth: '2px',
+    borderStyle: 'solid',
+    borderColor:
+      scrollLockMode === 'follow'
+        ? 'transparent transparent #2a5a9a transparent'
+        : scrollLockMode === 'read'
+          ? '#8a6a2a transparent'
+          : 'transparent',
+    transition: 'border-color 0.15s ease',
+  };
+
+  return <div ref={containerRef} style={borderStyle} />;
 }

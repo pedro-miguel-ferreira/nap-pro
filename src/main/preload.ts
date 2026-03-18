@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('terminal:close-active', handler);
     return () => ipcRenderer.removeListener('terminal:close-active', handler);
   },
+  onToggleScrollLock: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('scroll-lock:toggle', handler);
+    return () => ipcRenderer.removeListener('scroll-lock:toggle', handler);
+  },
   onSocketTerminalCreated: (
     callback: (data: { id: string; name: string; parentId?: string | null; cwd?: string }) => void,
   ) => {

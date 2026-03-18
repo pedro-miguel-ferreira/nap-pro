@@ -45,6 +45,32 @@ function App() {
       useTerminalStore.getState().closeActiveTerminal();
     });
 
+    // Menu: toggle scroll lock (Cmd+G) with double-press detection
+    let lastToggleTime = 0;
+    const removeScrollLockListener = window.electronAPI.onToggleScrollLock(() => {
+      const store = useTerminalStore.getState();
+      const id = store.activeTerminalId;
+      if (!id) return;
+      const entry = getTerminal(id);
+      if (!entry) return;
+
+      const now = Date.now();
+      const currentMode = entry.scrollLock.getMode();
+
+      let nextMode: 'off' | 'follow' | 'read';
+      if (currentMode === 'off') {
+        nextMode = 'follow';
+      } else if (currentMode === 'follow' && now - lastToggleTime < 500) {
+        nextMode = 'read';
+      } else {
+        nextMode = 'off';
+      }
+
+      lastToggleTime = now;
+      entry.scrollLock.setMode(nextMode);
+      store.setScrollLockMode(id, nextMode);
+    });
+
     // Socket: new terminal created via CLI
     const removeSocketCreate = window.electronAPI.onSocketTerminalCreated((data) => {
       useTerminalStore.getState().addSocketTerminal(data.id, data.name, data.parentId, data.cwd);
@@ -97,6 +123,7 @@ function App() {
       removeSidebarListener();
       removeCreateListener();
       removeCloseListener();
+      removeScrollLockListener();
       removeSocketCreate();
       removeSocketPeek();
       removeSocketClose();
