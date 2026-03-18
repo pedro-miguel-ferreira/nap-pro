@@ -65,6 +65,10 @@ interface SessionRow {
   uptime: string;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function printTable(header: string[], rows: string[][]): void {
   const widths = header.map((h, i) => {
     const colValues = [h, ...rows.map((r) => r[i] || '')];
@@ -163,9 +167,83 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'poke': {
+      if (!args[0] || !args[1]) {
+        process.stderr.write('Usage: nap poke <name> <message>\n');
+        process.exit(1);
+      }
+      const res = await send({
+        type: 'poke',
+        id: requestId++,
+        name: args[0],
+        message: args[1],
+      });
+      if (res['error']) {
+        process.stderr.write(String(res['message']) + '\n');
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'nap': {
+      if (!args[0]) {
+        process.stderr.write('Usage: nap nap <name> [--timeout <seconds>]\n');
+        process.exit(1);
+      }
+      const name = args[0];
+      const timeout = flags['timeout'] ? Number(flags['timeout']) : 600;
+      const deadline = Date.now() + timeout * 1000;
+
+      // Poll loop: check status every 1s
+      while (true) {
+        const res = await send({ type: 'status', id: requestId++, name });
+        if (res['error']) {
+          process.stderr.write(String(res['message']) + '\n');
+          process.exit(1);
+        }
+
+        const status = res['status'] as string;
+        if (status === 'done' || status === 'exited') {
+          const doneMessage = (res['doneMessage'] as string) || '';
+          if (doneMessage) {
+            process.stdout.write(doneMessage + '\n');
+          }
+          process.exit(0);
+        }
+
+        if (Date.now() >= deadline) {
+          process.stderr.write(`timeout waiting for ${name}\n`);
+          process.exit(1);
+        }
+
+        await sleep(1000);
+      }
+      break;
+    }
+
+    case 'done': {
+      const sessionId = process.env['NAP_SESSION_ID'];
+      if (!sessionId) {
+        process.stderr.write('not running inside nap\n');
+        process.exit(1);
+      }
+      const message = args[0] || '';
+      const res = await send({
+        type: 'done',
+        id: requestId++,
+        sessionId,
+        message,
+      });
+      if (res['error']) {
+        process.stderr.write(String(res['message']) + '\n');
+        process.exit(1);
+      }
+      break;
+    }
+
     default:
       process.stderr.write(`Unknown command: ${command}\n`);
-      process.stderr.write('Commands: start, ps, peek, kill, close\n');
+      process.stderr.write('Commands: start, ps, peek, kill, close, poke, nap, done\n');
       process.exit(1);
   }
 }

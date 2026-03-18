@@ -30,9 +30,32 @@ export interface CloseRequest {
   name: string;
 }
 
+export interface PokeRequest {
+  type: 'poke';
+  id: number;
+  name: string;
+  message: string;
+}
+
+export interface StatusRequest {
+  type: 'status';
+  id: number;
+  name: string;
+}
+
+export interface DoneRequest {
+  type: 'done';
+  id: number;
+  sessionId: string;
+  message: string;
+}
+
 export type SocketRequest =
   | StartRequest
   | PsRequest
   | PeekRequest
   | KillRequest
-  | CloseRequest;
+  | CloseRequest
+  | PokeRequest
+  | StatusRequest
+  | DoneRequest;

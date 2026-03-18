@@ -17,6 +17,7 @@ interface ElectronAPI {
   ) => () => void;
   onSocketPeek: (callback: (data: { id: string }) => void) => () => void;
   onSocketTerminalClose: (callback: (data: { id: string }) => void) => () => void;
+  onSocketStatusChanged: (callback: (data: { id: string; status: string }) => void) => () => void;
 }
 
 declare global {

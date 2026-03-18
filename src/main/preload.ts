@@ -51,4 +51,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('socket:terminal-close', handler);
     return () => ipcRenderer.removeListener('socket:terminal-close', handler);
   },
+  onSocketStatusChanged: (callback: (data: { id: string; status: string }) => void) => {
+    const handler = (_event: IpcRendererEvent, data: { id: string; status: string }) =>
+      callback(data);
+    ipcRenderer.on('socket:status-changed', handler);
+    return () => ipcRenderer.removeListener('socket:status-changed', handler);
+  },
 });

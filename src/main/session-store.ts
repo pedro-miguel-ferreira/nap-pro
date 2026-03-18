@@ -3,11 +3,12 @@ import { randomUUID } from 'crypto';
 export interface Session {
   id: string;
   name: string;
-  status: 'running' | 'exited';
+  status: 'running' | 'exited' | 'done';
   command?: string;
   cwd: string;
   parentId: string | null;
   createdAt: number;
+  doneMessage?: string;
 }
 
 let agentCounter = 0;

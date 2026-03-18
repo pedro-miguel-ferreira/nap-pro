@@ -11,6 +11,7 @@ import {
   removeSession,
 } from './session-store';
 import { resolveByName } from './name-resolver';
+import { setWriter, enqueue, clearQueue } from './message-queue';
 import type { SocketRequest } from '../shared/protocol';
 
 let mainWindow: BrowserWindow | null = null;
@@ -49,7 +50,12 @@ function killPty(id: string): void {
     entry.process.kill();
     outputBuffers.delete(id);
     readyTerminals.delete(id);
+    clearQueue(id);
   }
+}
+
+function writeToPty(id: string, data: string): void {
+  ptys.get(id)?.process.write(data);
 }
 
 function createPtyProcess(
@@ -302,6 +308,67 @@ function handleSocketRequest(msg: unknown): Record<string, unknown> {
       return { id: req.id, ok: true };
     }
 
+    case 'poke': {
+      const sessions = getAllSessions();
+      const result = resolveByName(sessions, req.name);
+      if (!result.ok) return { id: req.id, error: 'not_found', message: result.error };
+
+      const target = result.session;
+      if (target.status !== 'running') {
+        return { id: req.id, error: 'not_running', message: `${req.name} is not running` };
+      }
+
+      enqueue(target.id, req.message);
+      return { id: req.id, ok: true };
+    }
+
+    case 'status': {
+      const sessions = getAllSessions();
+      const result = resolveByName(sessions, req.name);
+      if (!result.ok) return { id: req.id, error: 'not_found', message: result.error };
+
+      const target = result.session;
+      return {
+        id: req.id,
+        ok: true,
+        status: target.status,
+        doneMessage: target.doneMessage ?? '',
+      };
+    }
+
+    case 'done': {
+      const session = getSession(req.sessionId);
+      if (!session) {
+        return { id: req.id, error: 'not_found', message: 'session not found' };
+      }
+
+      // Idempotent: second done call is a no-op
+      if (session.status === 'done') {
+        return { id: req.id, ok: true };
+      }
+
+      session.status = 'done';
+      session.doneMessage = req.message;
+
+      // Notify renderer of status change
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('socket:status-changed', {
+          id: session.id,
+          status: 'done',
+        });
+      }
+
+      // Poke parent if exists
+      if (session.parentId) {
+        const parent = getSession(session.parentId);
+        if (parent && parent.status === 'running') {
+          enqueue(parent.id, req.message);
+        }
+      }
+
+      return { id: req.id, ok: true };
+    }
+
     default:
       return { id: (req as { id?: number }).id, error: 'unknown', message: 'unknown command' };
   }
@@ -319,6 +386,8 @@ app.whenReady().then(async () => {
   // If another instance is running, quit immediately without creating
   // any windows — creating a window then quitting mid-init causes a
   // V8 HandleScope segfault on macOS (race between window close and V8 teardown).
+  setWriter(writeToPty);
+
   try {
     await startSocketServer(handleSocketRequest);
   } catch (err) {

@@ -55,6 +55,11 @@ function App() {
       useTerminalStore.getState().disposeTerminalOnly(data.id);
     });
 
+    // Socket: status changed (e.g. done)
+    const removeSocketStatus = window.electronAPI.onSocketStatusChanged((data) => {
+      useTerminalStore.getState().setStatus(data.id, data.status as 'done');
+    });
+
     // Create first terminal
     useTerminalStore.getState().createTerminal('shell');
 
@@ -66,6 +71,7 @@ function App() {
       removeSocketCreate();
       removeSocketPeek();
       removeSocketClose();
+      removeSocketStatus();
     };
   }, []);
 
