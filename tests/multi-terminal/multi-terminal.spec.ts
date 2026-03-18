@@ -1,7 +1,6 @@
 import {
   test as base,
   expect,
-  _electron as electron,
   ElectronApplication,
   Page,
 } from '@playwright/test';
@@ -12,15 +11,13 @@ import {
   bufferLine,
   getActiveId,
   getTerminalMeta,
-  ELECTRON_LAUNCH_ARGS,
+  launchApp,
 } from '../helpers';
 
 // ---------- fixture: fresh Electron app per test ----------
 const test = base.extend<{ app: ElectronApplication; page: Page }>({
   app: async ({}, use) => {
-    const app = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
-    });
+    const app = await launchApp();
     await use(app);
     // Quit from inside so macOS sees a proper NSApplication terminate
     await app.evaluate(({ app }) => app.quit());

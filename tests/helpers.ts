@@ -1,10 +1,33 @@
+import { _electron as electron } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
 import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
 
 export const APP_DIR = path.join(__dirname, '..');
 
 /** Default Electron launch args for tests */
 export const ELECTRON_LAUNCH_ARGS = [APP_DIR];
+
+const SOCKET_DIR = path.join(os.tmpdir(), 'nap-test');
+
+/** Unique socket path so test instances don't collide with each other or a running NAP */
+export function testSocketPath(): string {
+  fs.mkdirSync(SOCKET_DIR, { recursive: true });
+  return path.join(SOCKET_DIR, `test-${Date.now()}-${Math.random().toString(36).slice(2)}.sock`);
+}
+
+/**
+ * Launch an isolated Electron NAP instance for testing.
+ * Sets NAP_TEST=1 and a unique NAP_SOCKET so it never conflicts
+ * with a running NAP instance (including one running the tests).
+ */
+export async function launchApp(): Promise<ElectronApplication> {
+  return electron.launch({
+    args: ELECTRON_LAUNCH_ARGS,
+    env: { ...process.env, NAP_TEST: '1', NAP_SOCKET: testSocketPath() },
+  });
+}
 
 /** Wait for shell to produce at least one non-empty line (prompt ready) */
 export async function waitForShellReady(page: Page): Promise<void> {

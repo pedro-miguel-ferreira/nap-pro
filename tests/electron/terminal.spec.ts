@@ -1,10 +1,9 @@
 import {
   test,
   expect,
-  _electron as electron,
 } from '@playwright/test';
 import type { ElectronApplication, Page } from 'playwright-core';
-import { waitForShellReady, getActiveId, waitForText, ELECTRON_LAUNCH_ARGS } from '../helpers';
+import { waitForShellReady, getActiveId, waitForText, launchApp } from '../helpers';
 
 // ===========================================================================
 // T-0100-01 through T-0100-03, T-0100-06, T-0100-07
@@ -15,7 +14,7 @@ test.describe.serial('Electron Terminal — IPC Bridge', () => {
   let page: Page;
 
   test.beforeAll(async () => {
-    app = await electron.launch({ args: ELECTRON_LAUNCH_ARGS });
+    app = await launchApp();
     page = await app.firstWindow();
     await waitForShellReady(page);
   });
@@ -204,7 +203,7 @@ test.describe.serial('Electron Terminal — Pty Lifecycle', () => {
   let page: Page;
 
   test.beforeAll(async () => {
-    app = await electron.launch({ args: ELECTRON_LAUNCH_ARGS });
+    app = await launchApp();
     page = await app.firstWindow();
     await waitForShellReady(page);
   });
@@ -275,7 +274,7 @@ test.describe.serial('Electron Terminal — Pty Lifecycle', () => {
 // ===========================================================================
 test.describe('Electron Terminal — Window Close Cleanup', () => {
   test('T-0100-05: window close kills pty cleanly', async () => {
-    const app = await electron.launch({ args: ELECTRON_LAUNCH_ARGS });
+    const app = await launchApp();
     const page = await app.firstWindow();
     await waitForShellReady(page);
 

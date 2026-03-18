@@ -21,6 +21,7 @@ const mockElectronAPI = {
   pty: {
     create: vi.fn(),
     kill: vi.fn(),
+    close: vi.fn(),
     ready: vi.fn(),
     write: vi.fn(),
     resize: vi.fn(),
@@ -29,6 +30,7 @@ const mockElectronAPI = {
   },
   onToggleSidebar: vi.fn(() => vi.fn()),
   onCreateTerminal: vi.fn(() => vi.fn()),
+  onCloseActiveTerminal: vi.fn(() => vi.fn()),
   onSocketTerminalCreated: vi.fn(() => vi.fn()),
   onSocketPeek: vi.fn(() => vi.fn()),
   onSocketTerminalClose: vi.fn(() => vi.fn()),
