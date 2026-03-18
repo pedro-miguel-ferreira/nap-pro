@@ -39,16 +39,29 @@ export function Terminal() {
     if (!containerRef.current) return;
 
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    let savedScrollY: number | null = null;
     const observer = new ResizeObserver(() => {
+      // Capture scroll position immediately — CSS reflow may reset it before the debounce fires
+      if (savedScrollY === null) {
+        const id = useTerminalStore.getState().activeTerminalId;
+        if (id) {
+          const entry = getTerminal(id);
+          if (entry?.opened) {
+            savedScrollY = entry.terminal.buffer.active.viewportY;
+          }
+        }
+      }
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         const id = useTerminalStore.getState().activeTerminalId;
         if (!id) return;
         const entry = getTerminal(id);
         if (!entry || !entry.opened) return;
-        const scrollY = entry.terminal.buffer.active.viewportY;
         entry.fitAddon.fit();
-        entry.terminal.scrollToLine(scrollY);
+        if (savedScrollY !== null) {
+          entry.terminal.scrollToLine(savedScrollY);
+        }
+        savedScrollY = null;
         window.electronAPI.pty.resize(id, entry.terminal.cols, entry.terminal.rows);
       }, 50);
     });
