@@ -140,6 +140,7 @@ function App() {
       removeCreateListener();
       removeCloseListener();
       removeScrollLockListener();
+      if (pendingFollowTimer) clearTimeout(pendingFollowTimer);
       removeSocketCreate();
       removeSocketPeek();
       removeSocketClose();

@@ -384,12 +384,12 @@ test.describe.serial('Scroll Lock — Cmd+G Toggle', () => {
     let mode = await getScrollLockMode(page);
     expect(mode).toBe('off');
 
-    // First toggle: off → follow
+    // First toggle: off → follow (store updates immediately, module after 500ms timer)
     await sendToggle(app);
     mode = await getScrollLockMode(page);
     expect(mode).toBe('follow');
 
-    // Wait past the 500ms double-press window
+    // Wait past the 500ms pending timer so follow mode commits
     await page.waitForTimeout(600);
 
     // Second toggle: follow → off
