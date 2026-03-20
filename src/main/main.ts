@@ -1,8 +1,20 @@
 import { app, BrowserWindow, ipcMain, IpcMainEvent, Menu, dialog, shell } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import type { IPty, IDisposable } from 'node-pty';
 import * as pty from 'node-pty';
 import { startSocketServer, stopSocketServer } from './socket-server';
+
+// DEBUG: capture raw PTY output to file for scroll analysis
+const PTY_CAPTURE_PATH = path.join(app.getPath('home'), 'nap-pty-capture.log');
+let ptyCaptureStream: fs.WriteStream | null = null;
+function getPtyCaptureStream(): fs.WriteStream {
+  if (!ptyCaptureStream) {
+    ptyCaptureStream = fs.createWriteStream(PTY_CAPTURE_PATH, { flags: 'w' });
+    console.log(`[debug] PTY capture → ${PTY_CAPTURE_PATH}`);
+  }
+  return ptyCaptureStream;
+}
 import {
   createSession,
   getSession,
@@ -96,6 +108,9 @@ function createPtyProcess(
   pendingExits++;
 
   const dataDisposable = ptyProcess.onData((data: string) => {
+    // DEBUG: write raw PTY bytes to capture file
+    getPtyCaptureStream().write(data);
+
     if (readyTerminals.has(id) && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('pty:data', id, data);
     } else {

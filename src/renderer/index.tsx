@@ -16,6 +16,26 @@ function App() {
       if (entry) entry.terminal.write(data);
     });
 
+    // DEBUG: track viewportY changes to find what causes scroll jumps
+    const scrollDebugInterval = setInterval(() => {
+      const store = useTerminalStore.getState();
+      const id = store.activeTerminalId;
+      if (!id) return;
+      const entry = getTerminal(id);
+      if (!entry?.opened) return;
+      const viewportY = entry.terminal.buffer.active.viewportY;
+      const baseY = entry.terminal.buffer.active.baseY;
+      const el = entry.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null;
+      const scrollTop = el?.scrollTop ?? -1;
+      // Store last known values on the window for comparison
+      const w = window as any;
+      if (w._dbgLastViewportY !== viewportY || w._dbgLastBaseY !== baseY) {
+        console.log(`[scroll-debug] viewportY=${viewportY} baseY=${baseY} scrollTop=${Math.round(scrollTop)} Δviewport=${viewportY - (w._dbgLastViewportY ?? viewportY)} ΔbaseY=${baseY - (w._dbgLastBaseY ?? baseY)}`);
+        w._dbgLastViewportY = viewportY;
+        w._dbgLastBaseY = baseY;
+      }
+    }, 50);
+
     // Handle pty exit
     const removeExitListener = window.electronAPI.pty.onExit((id, exitCode) => {
       const entry = getTerminal(id);
@@ -146,6 +166,7 @@ function App() {
       removeSocketClose();
       removeSocketStatus();
       removeLogRequest();
+      clearInterval(scrollDebugInterval);
     };
   }, []);
 
