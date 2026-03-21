@@ -7,3 +7,10 @@ Things that are broken. Noticed while using, jotted down, moved on. Each one is 
   * tried `\n`, tried `\r` — neither triggers Claude Code's input handler
   * might be how Claude Code reads stdin vs how pty delivers keystrokes
   * needs investigation: what does Claude Code actually listen for?
+
+* clickable file paths break on wrapped lines
+  * file path that wraps onto multiple lines due to terminal width — can't click it
+  * the link provider seems to parse it (visual feedback) but click doesn't resolve
+  * workaround: widen the terminal until the path fits on one line, then it clicks fine
+  * likely: registerLinkProvider's regex matches within a single buffer row, but wrapped lines split the path across rows
+  * xterm's buffer rows vs viewport rows distinction — wrapped line is one buffer row but multiple viewport rows, or vice versa?
