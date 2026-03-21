@@ -15,7 +15,7 @@
     * vibe coding skips thinking — it works until it doesn't, then nobody knows what "correct" means
     * napkins compress thinking to its seed — load-bearing ideas that agents can unfold
   * the napkin philosophy
-    * the manifesto (from the napkin skill)
+    * the manifesto (include it, from the napkin skill)
     * napkin format: asterisks, nesting, labels not sentences, tension before solution
     * examples of real napkins from this project
   * the promise
@@ -44,20 +44,23 @@
       * e.g., 0300-socket-cli: the napkin, what the spec said, what test arch produced, what fs-eng built, what test-eng found (two real bugs)
     * this is the core section — make the reader FEEL how it works
   * how agents are managed
-    * // i think adding manual before automated will make nap cli much more compelling
-    * each agent gets a directory: prompt.md, response.md, questions.md
-    * // let's leave out questions; they just confuse the agents; and we didn't actually use questions once
-    * launched via `nap start 'claude --verbose "..."' --name NNN-role-subject`
-    * architect waits with `nap nap`, reads response, routes failures
-    * real example of a launch command and what happened
+    * first explain the MANUAL way — without NAP
+      * you'd open 5 terminal tabs, manually copy commands, switch between them, forget which is which
+      * no visibility into what's running, what's done, what's stuck
+    * then show how NAP CLI solves this
+      * each agent gets a directory: prompt.md, response.md
+      * launched via `nap start 'claude ...' --name NNN-role-subject`
+      * architect waits with `nap nap`, reads response, routes failures
+      * real example: the actual command and what happened
+    * agents must call `nap done` — they won't do it automatically, must be told in prompt
   * min specs — what they are and why
-    * // i'm really curious on what's your take
-    * // liberatingstructures are kinda vague on the process, and i have my prefs,
-    * // so really curious wdyt about this chapter and how will you do it
+    * inspired by Liberating Structures Min Specs — the minimum rules that must be respected
     * not a PRD, not a template with sections
     * the architect's opinionated take on why and what
     * only the constraints the implementer can't derive on their own
-    * real example from v1
+    * if you find yourself writing a section header, you're writing a PRD
+    * state the tension: the problem, the naive answer, why it's wrong, the real answer
+    * real example from v1 (0300 socket CLI spec was our best)
 
 * 03 — what was built (the POC)
   * features shipped — table, one line per feature
@@ -82,9 +85,46 @@
   * key files to read first
   * stable app vs dev setup (~/nap-app vs working repo)
 
-
-* // i'm missing:
-* // new workflow proposal, how it's different from v1
-* // new ui proposal, how it's different form v1
-* // should we include some visuals/design spec?
-* // maybe we need some guidance on design system / design style?
+* 06 — v2 direction (proposals, not prescriptions)
+  * new workflow proposal
+    * how it differs from v1
+    * nepic spaces, architect handoff, status lifecycle
+    * reference: scratch/workflow-proposal.md
+  * new UI — three-column layout
+    * ASCII wireframe showing the layout:
+      ```
+      ┌──────┬───────────────────┬──────────────────────────────┐
+      │  S   │      main         │         terminal             │
+      │      │                   │                              │
+      │ [v1] │  ▼ architect      │  $ nap ps                    │
+      │      │    ● running      │  NAME     STATUS   PARENT    │
+      │ [v2] │                   │  shell    ● run    -         │
+      │      │  ▼ 0100-napkin-   │  fs-eng   ● run    shell     │
+      │      │    browser        │  test-eng ● done   shell     │
+      │      │    ○ nap.md       │                              │
+      │      │    ○ spec.md      │  $ nap start 'claude ...'    │
+      │      │    ○ test.md      │    --name fs-eng-0200        │
+      │      │    === agents === │                              │
+      │      │    ● [done] t-arc │  ⏺ Reading prompt.md...     │
+      │      │    ● [run] fs-eng │                              │
+      │      │    ● [nap] t-eng  │  ⏺ Read(src/main/main.ts)  │
+      │      │                   │    ⎿ Read 115 lines          │
+      │      │  ▶ 0200-sqlite    │                              │
+      │      │  ▶ 0300-spaces    │  ⏺ Let me implement the     │
+      │      │                   │    socket server...          │
+      │      │                   │                              │
+      │  [+] │                   │                              │
+      └──────┴───────────────────┴──────────────────────────────┘
+        60px      ~300px                fills rest
+      ```
+    * left gutter: nepic switcher (like Slack workspaces)
+    * middle: napkin browser — tree view of features with nested agents
+    * right: terminal — click agent in middle → shows its terminal
+    * board view toggle — kanban of napkins by status
+  * design language
+    * dark theme (#1e1e1e background, #252526 sidebar, #3c3c3c borders)
+    * status dots: green (#22c55e), blue (#3b82f6), gray (#6b7280)
+    * scroll lock borders: dim blue (#2a5a9a) follow, dim amber (#8a6a2a) read
+    * monospace: Menlo, Monaco
+    * the existing scheme is well-established — preserve it
+  * these are starting points — the architect owns and reshapes them
