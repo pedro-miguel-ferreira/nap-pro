@@ -25,7 +25,7 @@ The (+) makes a pivot as cheap as having a new idea. The onboarding package mean
 ## UI Mockups
 
 Visual references in `onboarding/ui-mock/`:
-- `ui-v2-screenshot.png` — screenshot of the v1 POC (flat sidebar with agents)
+- `ui-v1-screenshot.png` — screenshot of the v1 POC (flat sidebar with agents)
 - `ui-v2-wireframe-mock.png` — wireframe of the v2 three-column layout
 
 Read both before the ASCII wireframe below — they show the before and after.
