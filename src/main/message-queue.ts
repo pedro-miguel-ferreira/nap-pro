@@ -37,7 +37,7 @@ function deliverNext(id: string): void {
   const msg = entry.messages.shift()!;
 
   if (writeFn) {
-    writeFn(id, msg + '\n');
+    writeFn(id, msg + '\r');
   }
 
   if (entry.messages.length > 0) {
