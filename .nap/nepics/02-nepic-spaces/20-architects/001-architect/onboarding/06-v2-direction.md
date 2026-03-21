@@ -2,15 +2,25 @@
 
 These are proposals from the v1 architect and human. You own them — reshape, push back, extend. The detailed draft is in `scratch/inputs-draft.nap.md`. The workflow proposal is in `scratch/workflow-proposal.md`. This doc summarizes the direction.
 
-## The Core Problem v2 Solves
+## Two Big Shifts
+
+v2 makes two changes that are equally important. Both are load-bearing — the tool doesn't work without either.
+
+### From terminals to a structured project
+
+The POC is a terminal manager. You see agents as cards in a sidebar — their names, their status dots. That's it. You don't see the project. You don't see which agents belong to which feature, which napkins have specs, which features are in progress. When you have 15 agents, the sidebar is a wall of names.
+
+v2 replaces the flat sidebar with a **napkin browser** — a tree view organized by features, not terminals. Each napkin expands to show its artifacts (nap.md, spec.md, test.md) and its agent pipeline with statuses. You see the work — which features exist, how far along each one is, where agents are stuck. The middle column becomes a project dashboard, not a terminal list.
+
+This also means **persistence**. SQLite stores agent statuses, session history, napkin metadata. Close the app, reopen it — your project is there. The POC lost everything on quit.
+
+### From one continuous push to pivotable nepics
 
 Every project hits a wall where the current thinking doesn't fit the next ambition. The POC proved the concept — now you need a real version. Different roadmap, different architecture decisions, different scope. In a normal workflow, this pivot is painful: archive the old stuff, rewrite context, brief a new session, spend hours on overhead that kills momentum.
 
-The central answer in v2 is the **(+) button**. It sits in the left gutter, right where a new nepic icon would appear. Click it and a fresh space is created — new architect, new napkin directory, new roadmap, new onboarding package. But the codebase is right there. The previous nepics are right there for reference. You don't lose what you built. You start thinking again, unburdened by the old context.
+The answer is the **(+) button**. It sits in the left gutter, right where a new nepic icon would appear. Click it and a fresh space is created — new architect, new napkin directory, new roadmap, new onboarding package. But the codebase is right there. The previous nepics are right there for reference. You don't lose what you built. You start thinking again, unburdened by the old context.
 
 The (+) makes a pivot as cheap as having a new idea. The onboarding package means the new architect starts with full understanding — same energy as the first conversation, but standing on validated ground. Moving to a new version is as easy as clicking (+), and here's a new era, a new space, a fresh team ready to build, starting with exploration as exciting as the very first one.
-
-v2 also replaces the flat sidebar with a **napkin browser** — a tree view organized by features, not terminals. Each napkin expands to show its artifacts and agents. You see the project, not just the terminals.
 
 ## The Three-Column Layout
 
