@@ -12,7 +12,7 @@ The obvious approach: give one AI agent a napkin and say "build it." This fails 
 
 ## The Roles
 
-Four roles. Each exists because of a specific tension.
+Four roles. Each exists because of a specific tension. Full role definitions are in `.nap/00-org/40-roles/`.
 
 ### Architect
 
