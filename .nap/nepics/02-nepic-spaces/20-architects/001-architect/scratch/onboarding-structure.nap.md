@@ -44,11 +44,16 @@
       * e.g., 0300-socket-cli: the napkin, what the spec said, what test arch produced, what fs-eng built, what test-eng found (two real bugs)
     * this is the core section — make the reader FEEL how it works
   * how agents are managed
+    * // i think adding manual before automated will make nap cli much more compelling
     * each agent gets a directory: prompt.md, response.md, questions.md
+    * // let's leave out questions; they just confuse the agents; and we didn't actually use questions once
     * launched via `nap start 'claude --verbose "..."' --name NNN-role-subject`
     * architect waits with `nap nap`, reads response, routes failures
     * real example of a launch command and what happened
   * min specs — what they are and why
+    * // i'm really curious on what's your take
+    * // liberatingstructures are kinda vague on the process, and i have my prefs,
+    * // so really curious wdyt about this chapter and how will you do it
     * not a PRD, not a template with sections
     * the architect's opinionated take on why and what
     * only the constraints the implementer can't derive on their own
@@ -76,3 +81,10 @@
   * build/run/test commands
   * key files to read first
   * stable app vs dev setup (~/nap-app vs working repo)
+
+
+* // i'm missing:
+* // new workflow proposal, how it's different from v1
+* // new ui proposal, how it's different form v1
+* // should we include some visuals/design spec?
+* // maybe we need some guidance on design system / design style?
