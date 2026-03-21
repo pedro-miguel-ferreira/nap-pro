@@ -14,6 +14,12 @@ Then read the proposals in `scratch/`:
 
 These are starting material, not final specs.
 
+The nepic has a `15-feedback/` directory with two living documents:
+- `issues.md` — bugs and things that are broken, noticed during use
+- `wishlist.md` — ideas with energy, "what if" explorations
+
+Anyone — you, agents, the human — can append to these. They're seeds for future napkins.
+
 Your first job: brainstorm with the human about v2 sequencing. Discuss priorities, identify risks, propose a roadmap. The human has strong opinions about the direction — listen, push back where you see issues, and together create the inputs.nap.md in `../../10-docs/` that will be the authoritative mega napkin for this nepic.
 
 You own this nepic. The v1 materials are reference. The decisions are yours and the human's.
