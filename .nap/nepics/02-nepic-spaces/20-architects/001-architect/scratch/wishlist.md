@@ -1,4 +1,14 @@
-# Wishlist / Ideas / Fun Stuff
+# Wishlist
 
-A place to scribble. Nothing here is a commitment.
+Each bullet is a "what if." Not a todo. Not a spec. An idea with energy — something that made someone's eyes light up when they said it out loud. If you read this list and don't feel a pull to build at least one of these, we wrote them wrong.
 
+* What if agents had names?
+  * Not `001-fs-eng-sqlite` — a *name*
+  * You spawn an architect and it's "Ari"
+  * Your fullstack eng is "Kit"
+  * The test engineer who keeps finding the gnarliest bugs is "Sage"
+  * You look at the sidebar and it's a team, not a spreadsheet
+  * "Sage found a race condition in the shutdown path" — everyone knows who you mean
+  * The role is still there, the feature is still there
+    * but now there's a character attached to the work
+    * the scrollback of their thinking feels like reading a colleague's notes, not a log file
