@@ -22,6 +22,14 @@ The answer is the **(+) button**. It sits in the left gutter, right where a new 
 
 The (+) makes a pivot as cheap as having a new idea. The onboarding package means the new architect starts with full understanding — same energy as the first conversation, but standing on validated ground. Moving to a new version is as easy as clicking (+), and here's a new era, a new space, a fresh team ready to build, starting with exploration as exciting as the very first one.
 
+## UI Mockups
+
+Visual references in `onboarding/ui-mock/`:
+- `ui-v2-screenshot.png` — screenshot of the v1 POC (flat sidebar with agents)
+- `ui-v2-wireframe-mock.png` — wireframe of the v2 three-column layout
+
+Read both before the ASCII wireframe below — they show the before and after.
+
 ## The Three-Column Layout
 
 ```
