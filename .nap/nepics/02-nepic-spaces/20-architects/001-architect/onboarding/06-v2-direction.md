@@ -2,13 +2,15 @@
 
 These are proposals from the v1 architect and human. You own them — reshape, push back, extend. The detailed draft is in `scratch/inputs-draft.nap.md`. The workflow proposal is in `scratch/workflow-proposal.md`. This doc summarizes the direction.
 
-## The Big Shift
+## The Core Problem v2 Solves
 
-v1 has a flat sidebar of agent cards. It works for 5 agents. It doesn't work for 15. You lose track of which agents belong to which feature. You can't see the project at a glance.
+Every project hits a wall where the current thinking doesn't fit the next ambition. The POC proved the concept — now you need a real version. Different roadmap, different architecture decisions, different scope. In a normal workflow, this pivot is painful: archive the old stuff, rewrite context, brief a new session, spend hours on overhead that kills momentum.
 
-v2 replaces the flat sidebar with a **napkin browser** — a tree view organized by features, not terminals. Each napkin expands to show its artifacts (nap.md, spec.md, test.md) and its agents with statuses. Click an agent to see its terminal.
+The central answer in v2 is the **(+) button**. It sits in the left gutter, right where a new nepic icon would appear. Click it and a fresh space is created — new architect, new napkin directory, new roadmap, new onboarding package. But the codebase is right there. The previous nepics are right there for reference. You don't lose what you built. You start thinking again, unburdened by the old context.
 
-v2 also adds **nepic spaces** — each major milestone gets its own workspace with its own architect, its own napkins, its own roadmap. Like Slack workspaces. A clean context break between versions.
+The (+) makes a pivot as cheap as having a new idea. The onboarding package means the new architect starts with full understanding — same energy as the first conversation, but standing on validated ground. Moving to a new version is as easy as clicking (+), and here's a new era, a new space, a fresh team ready to build, starting with exploration as exciting as the very first one.
+
+v2 also replaces the flat sidebar with a **napkin browser** — a tree view organized by features, not terminals. Each napkin expands to show its artifacts and agents. You see the project, not just the terminals.
 
 ## The Three-Column Layout
 
