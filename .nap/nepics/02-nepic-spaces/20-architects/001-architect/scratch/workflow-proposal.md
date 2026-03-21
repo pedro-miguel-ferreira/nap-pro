@@ -56,6 +56,7 @@ Status changes:
 ### Nepic Lifecycle
 
 1. Human clicks plus → new nepic created
+//What is Plus? I don't see any explanation here. I don't see any explanation of the UI
 2. New architect session starts
 3. Architect reads onboarding, brainstorms with human
 4. Architect creates mega napkin → `10-docs/inputs.nap.md`
@@ -86,5 +87,3 @@ When context window is exhausted:
 - Should there be a formal review gate, or is the current "human reads and comments in editor" sufficient?
 - How much of the pipeline should be automatable? (e.g., `nap unfold 0100-feature` auto-spawns test arch → fs eng → test eng)
 
-
-//Again in this workflow description and in overall package we are missing what's the idea behind the workflow? What exactly is the logic? What happens on each step? And without this workflow it doesn't make sense to explain UI because it's not clear what everything does in a bigger picture
