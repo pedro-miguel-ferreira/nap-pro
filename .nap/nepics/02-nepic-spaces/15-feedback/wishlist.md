@@ -60,3 +60,18 @@ Each bullet is a "what if." Not a todo. Not a spec. An idea with energy — some
   * the feel: agents don't block on obvious permissions
     * like giving your CI pipeline the right credentials
     * you don't approve every `npm install` manually
+
+* What if poke was a real collaboration tool?
+  * poke works now (text → Escape → CR) but the workflow around it is raw
+  * problem: poked messages arrive as if the human typed them
+    * agent can't tell who sent it — human? architect? another agent?
+    * stuck messages in input buffer if agent isn't at a prompt
+  * need: sender identity — `//003-test-eng: hey, I'm blocked on X`
+    * agent sees who's talking, can respond appropriately
+  * need: timing — only poke when agent is at a prompt, not mid-output
+    * detect prompt state from pty output before poking?
+  * need: protocol — when do you poke vs write to a file vs launch a new agent?
+    * poke = quick question, real-time, like a DM
+    * file = structured handoff, async, like an email
+    * new agent = new task, fresh context
+  * for now: don't use poke in agent workflows, only done + response.md

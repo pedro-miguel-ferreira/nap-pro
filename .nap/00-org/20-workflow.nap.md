@@ -138,8 +138,11 @@ Last line of the prompt. Every time. Agents forget if it's buried in the middle.
 ## Agent communication
 
 - **Files:** prompt.md (architect → agent), response.md (agent → architect)
-- **NAP CLI:** `nap poke` (send message), `nap nap` (wait for completion), `nap done` (signal done)
+- **`nap done`:** signal completion — the only CLI command agents use
+- **`nap nap`:** architect waits for agent completion
 - **Questions:** agent writes to `questions.md`, calls `nap done` with a message. Architect reads, updates spec or answers, re-launches.
+
+**Do NOT use `nap poke` in agent workflows.** Poked messages arrive as if the human typed them — the receiving agent can't tell who sent it. Use files (response.md, questions.md) for structured communication and `nap done` for signaling. Poke is reserved for future collaboration patterns with proper sender identity.
 
 ## Failure flow
 
