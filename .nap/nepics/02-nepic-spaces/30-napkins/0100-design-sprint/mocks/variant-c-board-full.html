@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAP v2 — Variant C: Board View Full Width</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Menlo, Monaco, 'Courier New', monospace;
+    font-size: 14px;
+    background: #1e1e1e;
+    color: #cccccc;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .layout { display: flex; height: 100%; }
+
+  /* ─── Gutter ─── */
+  .gutter {
+    width: 60px;
+    flex-shrink: 0;
+    background: #1e1e1e;
+    border-right: 1px solid #3c3c3c;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 12px;
+    gap: 4px;
+  }
+  .nepic-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    background: #2a2d2e;
+    color: #808080;
+    transition: background 0.15s, color 0.15s;
+  }
+  .nepic-icon:hover { background: #37373d; color: #cccccc; }
+  .nepic-icon.active {
+    background: #37373d;
+    color: #ffffff;
+    outline: 2px solid #007acc;
+    outline-offset: -2px;
+  }
+  .gutter-spacer { flex: 1; }
+  .nepic-icon.add { font-size: 22px; font-weight: 300; color: #555; }
+  .nepic-icon.add:hover { color: #cccccc; }
+
+  /* ─── Board (full width) ─── */
+  .board {
+    flex: 1;
+    background: #252526;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .board-header {
+    padding: 10px 16px;
+    border-bottom: 1px solid #3c3c3c;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .board-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #808080;
+  }
+  .architect-pill {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    background: #2a2d2e;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .architect-pill:hover { background: #37373d; }
+  .architect-pill.active { background: #37373d; outline: 1px solid #007acc; }
+
+  .board-body {
+    flex: 1;
+    display: flex;
+    gap: 1px;
+    background: #3c3c3c;
+    overflow-x: auto;
+  }
+  .board-body::-webkit-scrollbar { height: 6px; }
+  .board-body::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+  /* Kanban columns */
+  .kanban-col {
+    flex: 1;
+    min-width: 180px;
+    background: #252526;
+    display: flex;
+    flex-direction: column;
+  }
+  .kanban-col-header {
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #808080;
+    border-bottom: 1px solid #3c3c3c;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .col-count {
+    font-size: 10px;
+    background: #3c3c3c;
+    color: #808080;
+    padding: 1px 6px;
+    border-radius: 8px;
+  }
+  .kanban-col-body {
+    flex: 1;
+    padding: 8px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .kanban-col-body::-webkit-scrollbar { width: 4px; }
+  .kanban-col-body::-webkit-scrollbar-thumb { background: #555; border-radius: 2px; }
+
+  /* Cards — larger for full-width view */
+  .kanban-card {
+    background: #2a2d2e;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.15s;
+  }
+  .kanban-card:hover { background: #37373d; border-color: #555; }
+  .kanban-card.selected { border-color: #007acc; background: #37373d; }
+  .card-name {
+    font-size: 13px;
+    color: #cccccc;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .card-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-agents {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .card-agents-label {
+    font-size: 10px;
+    color: #555;
+    margin-right: 2px;
+  }
+  .card-agent-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    margin-top: 4px;
+    border-top: 1px solid #3c3c3c;
+    font-size: 11px;
+    color: #808080;
+    cursor: pointer;
+    transition: color 0.1s;
+  }
+  .card-agent-row:hover { color: #cccccc; }
+  .card-agent-row.selected-agent { color: #cccccc; font-weight: 600; }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-running { background: #22c55e; }
+  .dot-done { background: #3b82f6; }
+  .dot-exited { background: #6b7280; }
+  .card-no-agents {
+    font-size: 10px;
+    color: #555;
+  }
+  .card-artifacts {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .artifact-tag {
+    font-size: 10px;
+    color: #555;
+    background: #1e1e1e;
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  /* Status badges */
+  .status-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .badge-doing { background: #22c55e33; color: #22c55e; }
+  .badge-todo { background: #3b82f633; color: #3b82f6; }
+  .badge-backlog { background: #6b728033; color: #9ca3af; }
+  .badge-draft { background: #3c3c3c; color: #808080; }
+  .badge-done { background: #3b82f633; color: #3b82f6; }
+
+  /* Detail drawer (slides from right when an agent is clicked) */
+  .detail-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 480px;
+    height: 100%;
+    background: #1e1e1e;
+    border-left: 1px solid #3c3c3c;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
+  }
+  .detail-drawer.open { transform: translateX(0); }
+  .drawer-header {
+    padding: 8px 16px;
+    border-bottom: 1px solid #3c3c3c;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #252526;
+    flex-shrink: 0;
+  }
+  .drawer-close {
+    margin-left: auto;
+    font-size: 16px;
+    color: #808080;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    transition: background 0.1s, color 0.1s;
+  }
+  .drawer-close:hover { background: #37373d; color: #cccccc; }
+  .drawer-body {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .drawer-body::-webkit-scrollbar { width: 6px; }
+  .drawer-body::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+
+  .t-dim { color: #555; }
+  .t-green { color: #22c55e; }
+  .t-blue { color: #3b82f6; }
+  .t-yellow { color: #e5c07b; }
+  .t-cyan { color: #56b6c2; }
+  .t-white { color: #cccccc; }
+  .t-gray { color: #808080; }
+  .t-bold { font-weight: 700; }
+  .t-tool {
+    background: #2a2d2e;
+    border-left: 2px solid #3b82f6;
+    padding: 4px 8px;
+    margin: 4px 0;
+    display: block;
+  }
+  .t-thinking {
+    background: #2a2d2e;
+    border-left: 2px solid #e5c07b;
+    padding: 4px 8px;
+    margin: 4px 0;
+    display: block;
+    color: #808080;
+    font-style: italic;
+  }
+  .cursor-block {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: #cccccc;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- Gutter -->
+  <div class="gutter">
+    <div class="nepic-icon" onclick="selectNepic(this)" title="poc">P</div>
+    <div class="nepic-icon active" onclick="selectNepic(this)" title="spaces">S</div>
+    <div class="gutter-spacer"></div>
+    <div class="nepic-icon add" onclick="selectNepic(this)" title="create">+</div>
+  </div>
+
+  <!-- Board (full width) -->
+  <div class="board">
+    <div class="board-header">
+      <span class="board-title">Board</span>
+      <div class="architect-pill active" onclick="openDrawer('architect', 'Architect', 'running')">
+        <div class="status-dot dot-running" style="width:6px;height:6px"></div>
+        <span style="font-size:11px;color:#cccccc">Architect</span>
+        <span class="status-badge badge-doing" style="font-size:9px">running</span>
+      </div>
+    </div>
+
+    <div class="board-body">
+      <!-- Draft -->
+      <div class="kanban-col">
+        <div class="kanban-col-header">draft <span class="col-count">1</span></div>
+        <div class="kanban-col-body">
+          <div class="kanban-card" onclick="selectCard(this)">
+            <div class="card-name">0400-session-continuity</div>
+            <div class="card-no-agents">no agents</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Backlog -->
+      <div class="kanban-col">
+        <div class="kanban-col-header">backlog <span class="col-count">1</span></div>
+        <div class="kanban-col-body">
+          <div class="kanban-card" onclick="selectCard(this)">
+            <div class="card-name">0300-napkin-browser</div>
+            <div class="card-artifacts">
+              <span class="artifact-tag">nap.md</span>
+            </div>
+            <div class="card-no-agents">no agents</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Todo -->
+      <div class="kanban-col">
+        <div class="kanban-col-header">todo <span class="col-count">1</span></div>
+        <div class="kanban-col-body">
+          <div class="kanban-card" onclick="selectCard(this)">
+            <div class="card-name">0200-sqlite-persistence</div>
+            <div class="card-artifacts">
+              <span class="artifact-tag">nap.md</span>
+              <span class="artifact-tag">spec.md</span>
+            </div>
+            <div class="card-no-agents">no agents</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Doing -->
+      <div class="kanban-col">
+        <div class="kanban-col-header">doing <span class="col-count">1</span></div>
+        <div class="kanban-col-body">
+          <div class="kanban-card selected" onclick="selectCard(this)">
+            <div class="card-name">0100-design-sprint</div>
+            <div class="card-artifacts">
+              <span class="artifact-tag">nap.md</span>
+              <span class="artifact-tag">spec.md</span>
+              <span class="artifact-tag">test.md</span>
+            </div>
+            <div class="card-agent-row selected-agent" onclick="event.stopPropagation(); openDrawer('001-fs-eng', '001-fs-eng-design-sprint', 'running')">
+              <div class="status-dot dot-running"></div>
+              <span>001-fs-eng-design-sprint</span>
+            </div>
+            <div class="card-agent-row" onclick="event.stopPropagation(); openDrawer('002-test-arch', '002-test-arch-sqlite', 'done')">
+              <div class="status-dot dot-done"></div>
+              <span>002-test-arch-sqlite</span>
+            </div>
+            <div class="card-agent-row" onclick="event.stopPropagation(); openDrawer('003-fs-eng-fix', '003-fs-eng-sqlite-fix', 'exited')">
+              <div class="status-dot dot-exited"></div>
+              <span>003-fs-eng-sqlite-fix</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Review -->
+      <div class="kanban-col">
+        <div class="kanban-col-header">review <span class="col-count">0</span></div>
+        <div class="kanban-col-body"></div>
+      </div>
+
+      <!-- Done -->
+      <div class="kanban-col">
+        <div class="kanban-col-header">done <span class="col-count">1</span></div>
+        <div class="kanban-col-body">
+          <div class="kanban-card" onclick="selectCard(this)">
+            <div class="card-name">0500-agent-lifecycle</div>
+            <div class="card-artifacts">
+              <span class="artifact-tag">nap.md</span>
+              <span class="artifact-tag">spec.md</span>
+              <span class="artifact-tag">test.md</span>
+            </div>
+            <div class="card-agent-row" onclick="event.stopPropagation(); openDrawer('a-lifecycle-1', '001-fs-eng-lifecycle', 'done')">
+              <div class="status-dot dot-done"></div>
+              <span>001-fs-eng-lifecycle</span>
+            </div>
+            <div class="card-agent-row" onclick="event.stopPropagation(); openDrawer('a-lifecycle-2', '002-test-eng-lifecycle', 'done')">
+              <div class="status-dot dot-done"></div>
+              <span>002-test-eng-lifecycle</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail drawer (slides in from right) -->
+<div class="detail-drawer" id="drawer">
+  <div class="drawer-header">
+    <div class="status-dot dot-running" id="drawer-dot"></div>
+    <span class="t-white" id="drawer-name">001-fs-eng-design-sprint</span>
+    <span style="flex:1"></span>
+    <span style="font-size:10px;color:#808080;text-transform:uppercase;letter-spacing:0.5px" id="drawer-status">running</span>
+    <span class="drawer-close" onclick="closeDrawer()">&#10005;</span>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</div>
+
+<script>
+const terminalContent = {
+  'architect': `<span class="t-dim">$</span> <span class="t-white">claude --model opus "Read the roadmap and generate specs"</span>
+
+<span class="t-thinking">Thinking about the project roadmap and which napkins need specs...</span>
+
+<span class="t-white">I'll read the roadmap and generate specs for each milestone.</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">.nap/nepics/02-nepic-spaces/10-roadmap.md</span></span>
+
+<span class="t-white">Found 5 milestones. Starting with 0100-design-sprint.</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">.nap/nepics/.../0100-design-sprint/0100-design-sprint.spec.md</span></span>
+
+<span class="t-green">&#10003;</span> <span class="t-white">Spec written for 0100-design-sprint</span>
+<span class="t-green">&#10003;</span> <span class="t-white">Agent 001-fs-eng-design-sprint spawned</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">.nap/nepics/.../0200-sqlite-persistence/0200-sqlite.spec.md</span></span>
+
+<span class="t-green">&#10003;</span> <span class="t-white">Spec written for 0200-sqlite-persistence</span>
+
+<span class="t-thinking">Waiting for agent 001-fs-eng-design-sprint to complete...</span>
+
+<span class="t-dim">&#9679; Watching 1 running agent</span> <span class="cursor-block"></span>`,
+
+  '001-fs-eng': `<span class="t-dim">$</span> <span class="t-white">claude --model opus "Build the design sprint HTML mocks"</span>
+
+<span class="t-thinking">Reading the spec and napkin to understand requirements...</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">0100-design-sprint.spec.md</span></span>
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">0100-design-sprint.nap.md</span></span>
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">src/renderer/components/Sidebar.tsx</span></span>
+
+<span class="t-white">I need to build three HTML files for the design sprint. Let me start with the tree view variant.</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">design-sprint/variant-a-tree.html</span></span>
+
+<span class="t-green">&#10003;</span> <span class="t-white">Created variant-a-tree.html (328 lines)</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">design-sprint/variant-b-board-companion.html</span></span>
+
+<span class="t-green">&#10003;</span> <span class="t-white">Created variant-b-board-companion.html (291 lines)</span>
+
+<span class="t-thinking">Now building the full-width board variant...</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">design-sprint/variant-c-board-full.html</span></span>
+
+<span class="t-dim">Writing file...</span> <span class="cursor-block"></span>`,
+
+  '002-test-arch': `<span class="t-dim">$</span> <span class="t-white">claude --model opus "Design test architecture for sqlite persistence"</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">0200-sqlite-persistence.spec.md</span></span>
+
+<span class="t-white">Designing test architecture for SQLite persistence layer.</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">0200-sqlite-persistence.test.md</span></span>
+
+<span class="t-green">&#10003;</span> <span class="t-white">Test architecture written</span>
+
+<span class="t-white">Tests cover:</span>
+  <span class="t-gray">&#8226;</span> <span class="t-white">Schema creation and migrations</span>
+  <span class="t-gray">&#8226;</span> <span class="t-white">CRUD operations for napkins, agents, statuses</span>
+  <span class="t-gray">&#8226;</span> <span class="t-white">Concurrent write safety</span>
+  <span class="t-gray">&#8226;</span> <span class="t-white">Filesystem sync round-trip</span>
+
+<span class="t-blue">&#10003;</span> <span class="t-white t-bold">Done</span>
+<span class="t-dim">[process exited with code 0]</span>`,
+
+  '003-fs-eng-fix': `<span class="t-dim">$</span> <span class="t-white">claude --model opus "Fix the sqlite WAL mode issue"</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">src/persistence/sqlite.ts</span></span>
+
+<span class="t-thinking">The issue is that WAL mode isn't enabled before the first write...</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Edit</span> <span class="t-gray">src/persistence/sqlite.ts:14-16</span></span>
+
+<span class="t-white">Added PRAGMA journal_mode=WAL before schema init.</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Bash</span> <span class="t-gray">npm test -- --grep "sqlite"</span></span>
+
+<span class="t-white">  persistence/sqlite</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">creates tables on init (12ms)</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">enables WAL mode (3ms)</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">survives concurrent writes (45ms)</span>
+
+<span class="t-gray">3 passing (60ms)</span>
+
+<span class="t-dim">[process exited with code 0]</span>`,
+
+  'a-lifecycle-1': `<span class="t-dim">$</span> <span class="t-white">claude --model opus "Implement agent lifecycle management"</span>
+
+<span class="t-thinking">Reading the spec to understand lifecycle states...</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">0500-agent-lifecycle.spec.md</span></span>
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">0500-agent-lifecycle.nap.md</span></span>
+
+<span class="t-white">Agent lifecycle has 4 states: spawning → running → done | exited</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">src/agents/lifecycle.ts</span></span>
+
+<span class="t-green">&#10003;</span> <span class="t-white">Created lifecycle.ts — state machine + event emitter</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">src/agents/spawn.ts</span></span>
+
+<span class="t-green">&#10003;</span> <span class="t-white">Created spawn.ts — process management</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Bash</span> <span class="t-gray">tsc --noEmit</span></span>
+
+<span class="t-gray">0 errors</span>
+
+<span class="t-blue">&#10003;</span> <span class="t-white t-bold">Done</span>
+<span class="t-dim">[process exited with code 0]</span>`,
+
+  'a-lifecycle-2': `<span class="t-dim">$</span> <span class="t-white">claude --model opus "Write tests for agent lifecycle"</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">0500-agent-lifecycle.test.md</span></span>
+<span class="t-tool"><span class="t-blue t-bold">Read</span> <span class="t-gray">src/agents/lifecycle.ts</span></span>
+
+<span class="t-white">Writing tests for all lifecycle transitions.</span>
+
+<span class="t-tool"><span class="t-blue t-bold">Write</span> <span class="t-gray">src/agents/__tests__/lifecycle.test.ts</span></span>
+
+<span class="t-tool"><span class="t-blue t-bold">Bash</span> <span class="t-gray">npm test -- --grep "lifecycle"</span></span>
+
+<span class="t-white">  agents/lifecycle</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">spawning → running transition (5ms)</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">running → done on clean exit (8ms)</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">running → exited on error (4ms)</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">emits state change events (6ms)</span>
+    <span class="t-green">&#10003;</span> <span class="t-white">rejects invalid transitions (2ms)</span>
+
+<span class="t-gray">5 passing (25ms)</span>
+
+<span class="t-blue">&#10003;</span> <span class="t-white t-bold">Done</span>
+<span class="t-dim">[process exited with code 0]</span>`
+};
+
+function selectNepic(el) {
+  document.querySelectorAll('.nepic-icon').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function selectCard(cardEl) {
+  document.querySelectorAll('.kanban-card').forEach(c => c.classList.remove('selected'));
+  cardEl.classList.add('selected');
+}
+
+function openDrawer(id, name, status) {
+  const drawer = document.getElementById('drawer');
+  const dot = document.getElementById('drawer-dot');
+  dot.className = 'status-dot dot-' + status;
+  document.getElementById('drawer-name').textContent = name;
+  document.getElementById('drawer-status').textContent = status;
+  document.getElementById('drawer-body').innerHTML = terminalContent[id] || '<span class="t-gray">No output</span>';
+  drawer.classList.add('open');
+
+  // Highlight the clicked agent row
+  document.querySelectorAll('.card-agent-row').forEach(r => r.classList.remove('selected-agent'));
+  if (event && event.currentTarget && event.currentTarget.classList.contains('card-agent-row')) {
+    event.currentTarget.classList.add('selected-agent');
+  }
+}
+
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.querySelectorAll('.card-agent-row').forEach(r => r.classList.remove('selected-agent'));
+}
+
+// Close drawer on Escape
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeDrawer();
+});
+</script>
+</body>
+</html>
