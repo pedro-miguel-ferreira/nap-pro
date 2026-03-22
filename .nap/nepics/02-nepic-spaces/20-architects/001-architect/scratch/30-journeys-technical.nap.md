@@ -139,6 +139,16 @@
       * main process: read `.nap/nap.db` (SQLite)
       * restore: active nepic, session list, agent relationships, statuses
       * mark all previously "running" sessions as "exited" (ptys are gone)
+        * // yeah, so here's the magic. 
+          * // Because we know the uuids of all agents' sessions,
+          * // and sessions are persistent in CC, 
+          * //we can restore agents right at the moment where they stopped; 
+          * // and restore statuses right at what they were. 
+          * // maybe It's also a matter of sending "pls continue" 
+            * // to each one that was running 
+            * // and stopped because of app was closed
+            * // but this "pls continue" resuming let's move it out of scope for now
+            * // it can be a fast-follow napkin later when we have all the system working
       * create window, load renderer
       * renderer: reads state from main via IPC → zustand hydrates
       * architect terminal: auto-run `claude --resume <session-key>`
@@ -184,6 +194,7 @@
   * architect succession
     * architect context is full — token count high, responses slower
     * architect writes handoff to `10-docs/handoff.md`
+      * // this should go to this architect's folder, not common docs
       * state of each napkin, decisions + why, what's stuck
     * new architect dir: `20-architects/002-architect/`
     * new session spawned, reads onboarding + handoff
@@ -207,21 +218,27 @@
     * only active terminal renders — others buffer in xterm silently
     * but IPC still fires for all — main process is busy
     * monitor: does IPC backpressure cause lag?
+    * // tell me more about this problem
 
   * SQLite write frequency
     * status changes are infrequent (agent starts, agent finishes)
     * not on hot path (pty data)
     * sync API means writes block main thread — but they're rare and fast
     * migration on startup: sequential, blocking, one-time
+    * // for v2 scope, let's not think of migration
+      * // for testing we'll just wipe db clean each time and start from scratch
+      * // maybe what's going to be helpful is having init scripts for the db
 
   * Canvas addon under load
     * 10+ terminals = 10+ Canvas contexts
     * only one visible at a time — but all initialized
     * monitor: memory usage, context limits
     * v1 stress test passed with 10 terminals — carry forward
+    * // i don't care much about this at this point; let's ditch this discussion
 
   * scrollback persistence (stretch)
     * xterm buffers are in-memory — lost on restart
     * option: `nap log <name>` dumps to file, run on clean quit for all sessions
     * option: stream pty output to disk continuously (append-only log)
     * neither is v2 scope — but the data model should not prevent it
+    * // this is covered by CC's persistent sessions 
