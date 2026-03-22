@@ -23,3 +23,20 @@ Each bullet is a "what if." Not a todo. Not a spec. An idea with energy — some
     * fresh project? existing repo? mid-flight project with history?
     * what's the minimum setup to go from "code in a folder" to "agents collaborating"
     * scaffolding, onboarding, team structure — all from one command?
+
+* What if spawning an agent was as easy as Claude Code's internal agents?
+  * right now: create directory, write prompt.md, `nap start 'claude ... read prompt.md ...'`
+    * three manual steps before an agent even exists
+    * every agent that wants to launch a sub-agent has to know this dance
+  * what if: `nap spawn --napkin 0100 --role fs-eng --name "sqlite-schema"`
+    * creates the agent dir in the napkin's `agents/` folder
+    * returns the path — caller writes prompt.md there
+    * or: takes prompt inline — `nap spawn --prompt "do X, write Y"`
+    * auto-wires parent-child via NAP_SESSION_ID
+    * agent appears in sidebar immediately, green dot, ready to watch
+  * the feel: launching a sub-agent should be as natural as Claude Code spawning an internal agent
+    * but visible — full terminal, full session, human can click and talk
+  * parent-child tracking already exists (NAP_SESSION_ID)
+    * just needs the scaffolding to be automated
+  * flat structure in `agents/` dir, parent-child tracked in metadata
+    * no nested dirs — all agents are peers in the folder, relationships are data
