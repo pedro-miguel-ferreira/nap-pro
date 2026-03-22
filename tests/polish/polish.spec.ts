@@ -70,6 +70,7 @@ function runCliAsync(
   return new Promise((resolve) => {
     const start = Date.now();
     const env: Record<string, string | undefined> = { ...process.env, ...opts.env };
+    delete env['NAP_SESSION_ID']; // strip to avoid FK violation against fresh test DB
     if (opts.socketPath) env['NAP_SOCKET'] = opts.socketPath;
     const proc = spawn('node', [CLI_PATH, ...args], {
       env: env as NodeJS.ProcessEnv,

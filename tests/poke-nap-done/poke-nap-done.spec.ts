@@ -64,9 +64,9 @@ function runCliAsync(
 ): Promise<{ stdout: string; stderr: string; exitCode: number; elapsed: number }> {
   return new Promise((resolve) => {
     const start = Date.now();
-    const proc = spawn('node', [CLI_PATH, ...args], {
-      env: { ...process.env, NAP_SOCKET: socketPath },
-    });
+    const env = { ...process.env, NAP_SOCKET: socketPath };
+    delete env['NAP_SESSION_ID']; // strip to avoid FK violation against fresh test DB
+    const proc = spawn('node', [CLI_PATH, ...args], { env });
     let stdout = '';
     let stderr = '';
     proc.stdout.on('data', (d: Buffer) => {
