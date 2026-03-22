@@ -2,199 +2,381 @@
 
 * what it proves
   * structured project view replaces flat terminal sidebar
-    * features, not terminals — napkin cards with nested agents
-  * SQLite persistence — state survives app restart
-  * nepic spaces — fresh architect, fresh napkins, same codebase
-  * board view — project status at a glance
+    * napkin bullets as UI — sidebar renders `*` format, not cards
+    * 40 napkins scannable in one column, density holds at scale
+  * SQLite persistence — state survives restart
+  * CC session resume — architect picks up mid-thought
+  * nepic spaces — pivot as cheap as having an idea
+
+* what carries over unchanged
+  * terminal — xterm.js + Canvas addon + node-pty + IPC bridge
+    * DOM reparenting for switching
+    * 100k scrollback
+  * socket server + CLI
+    * per-project socket at `.nap/sock`
+    * ndjson protocol, request-response
+  * electron-vite + TypeScript strict + React 18 + zustand
+  * test infrastructure — vitest (small) + playwright (medium)
+
 
 * three-column layout
+
   * left gutter (~60px)
-    * nepic switcher — vertical stack of icons/initials
-    * click to switch active nepic
-    * (+) at bottom — create new nepic
-    * active nepic highlighted
-    * when only one nepic: gutter still visible, establishes spatial model
-  * middle column (~300px)
-    * napkin browser — the project navigation
-    * React component, not a terminal
-      * tree with collapsible sections
-      * styled to match v1 dark theme
-    * two view modes (toggle at top)
-      * tree view — napkins grouped by feature, expandable
-        * collapsed: feature name + status badge
-        * expanded: artifacts + agents
-          * artifacts (nap.md, spec.md, test.md) — clickable → shell.openPath()
-            * same mechanism as v1 file link provider
-          * agents with status dots — clickable → show terminal on right
-      * board view — napkins grouped by status (kanban)
-    * Cmd+K filter works in both views
-      * same substring, case-insensitive as v1 sidebar filter
-    * architect section pinned at top
-      * click → architect terminal
-      * status: running / not running
+    * nepic switcher — vertical icon stack
+    * P — previous era (POC, retired)
+    * S — active era (highlighted with white bar)
+    * (+) — sits where the next nepic would appear
+      * not a button at the bottom — it's the next thing in the sequence
+      * click → fresh space, fresh architect, same codebase
+
+  * middle column — the sidebar
+    * a napkin rendering itself as an interactive surface
+      * `*` bullets, nesting, labels — same format as the documents it navigates
+    * the project as a scannable document
+      * each line: name, agent dots, napkin phase
+      * green dots pulse — agents actively working
+      * read the entire project state without clicking anything
+    * Cmd+K filter (substring, case-insensitive)
+
+    * architects pinned at top
+      * 002-nova — active, running, managing everything
+      * 001-architect — retired but still there
+        * click to read historical context
+        * poke to pull knowledge from their deeper history
+      * separated from napkins — the control plane, not a feature
+
+    * napkin cards — three states, progressive disclosure
+      * collapsed — one line
+        * `* 0200-sqlite-persistence ●● doing`
+        * scan 40 napkins in 40 lines
+      * focused — click to expand in place
+        * artifacts as `*` bullets
+          * nap.md, spec.md, test.md
+          * click → open in editor (shell.openPath)
+        * agents as directories with status dots
+          * `* 001-test-architect/ ● done`
+          * `* 002-fs-eng/ ● run` (green, pulsing)
+          * `* 003-test-eng/ ◌ nap` (amber, hollow)
+          * click agent → switch terminal
+        * rest of 40 napkins still visible below as one-liners
+          * never lose the forest for the tree
+      * extended (Cmd+E) — filesystem snapshot
+        * full file names visible
+          * `0100-design-sprint.nap.md`
+          * `0100-design-sprint.spec.md`
+        * agent directories expand to show contents
+          * `[terminal]` — click to open live session
+            * italic, bracketed — signals action, not file
+          * prompt.md, response.md — the actual artifacts
+        * file controls on hover
+          * ⎘ copy relative path
+          * ↗ open in editor
+        * same visual language at every zoom level
+          * bullets all the way down
+
   * right panel (fills rest)
     * terminal — same as v1
     * default: architect terminal
-    * click agent in middle → switches to that agent's terminal
-      * same DOM reparenting as v1 terminal switching
-      * Canvas addon survives, no re-rendering
+    * click agent in sidebar → switches via DOM reparent
+    * breadcrumb navigation in header
+      * `S > 0100-design-sprint > FS-100`
+      * click S → back to architect
+      * click napkin name → refocus card in sidebar
+      * spatial context — always know where you are
     * all v1 features preserved
       * Canvas rendering, 100k scrollback, addon-fit
       * scroll lock (follow / read)
       * clickable file paths (Cmd+click)
 
-* napkin browser data model
+
+* kanban overlay (Cmd+`)
+
+  * Quake console — slides down from top, full width
+    * terminal stays underneath, untouched
+    * a HUD, not a replacement
+
+  * five columns: backlog → todo → doing → review → done
+    * count per column in header: DOING (7)
+    * the distribution IS the information
+      * where the weight is, where the gaps are
+
+  * cards
+    * collapsed (default)
+      * name + agent dots + → navigation arrow
+      * see the shape of the entire version at a glance
+    * expanded (click card name)
+      * first-level `*` bullets from .nap.md
+        * the actual ideas, not just status labels
+        * napkin format carries through even here
+      * artifact badges: nap spec test journeys
+        * filled = exists, dimmed = not yet
+        * see how far along the pipeline each feature is
+      * agent dots — who's working, who's done
+
+  * → navigation
+    * click → on any card
+    * board slides away
+    * sidebar scrolls to that napkin, blue flash
+    * terminal switches to best agent
+    * one click: overview → deep work
+
+  * read-only for v2
+    * drag-to-reorder is future
+
+
+* two orthogonal status systems
+  * napkin status (project phase)
+    * backlog → todo → doing → review → done
+    * shown on kanban columns, shown as badge on sidebar cards
+    * stored in SQLite, synced to board symlinks
+  * agent status (runtime state)
+    * running ● green (filled, pulsing)
+    * done ● blue (filled)
+    * napping ◌ amber (hollow)
+    * exited ◌ gray (hollow)
+    * orphaned — dotted border, dimmed (lost annotation)
+  * orthogonal: agents active at any project phase
+
+
+* persistence model — annotation layer
+
   * two sources, strict separation
-    * SQLite → status, relationships, timing
-    * filesystem → content listing (readdir for what .md files exist)
-  * no filesystem watching for status — SQLite is authoritative
-  * filesystem is passive — just answers "what artifacts exist in this dir"
-    * `readdir(.nap/nepics/NN/30-napkins/0100-feature/)` → list of .md files
-    * no chokidar, no fs.watch for content — refresh on demand or on focus
-  * tree structure derived from
-    * napkin dirs in `30-napkins/` (filesystem)
-    * agent-to-napkin relationships (SQLite)
-    * status per agent (SQLite)
-    * status per napkin (SQLite, or derived from agent statuses)
+    * filesystem — defines what exists
+      * napkin dirs, agent dirs, specs, prompts, responses
+      * append-only: created, never renamed, never deleted
+      * human reads and edits in editor
+    * SQLite — annotates what exists
+      * statuses, CC session UUIDs, timestamps, relationships
+      * keyed by stable path (napkin_slug + agent_dir_name)
+      * app reads for sidebar, kanban, resume
 
-* SQLite persistence
-  * better-sqlite3 in main process
-    * native module — electron-rebuild, same story as node-pty
-    * synchronous API — reads/writes block, no async complexity
-    * single writer, no concurrency concerns (Electron main is single-threaded)
-  * database at `.nap/nap.db`
-  * schema migrations
-    * version table: `schema_version` with single row
-    * migration files run sequentially on startup
-    * schema will change — add fields, rename, refactor
-    * migrations must be idempotent (safe to re-run)
-  * tables (initial, will evolve)
+  * the model
+    * filesystem defines what exists
+    * SQLite adds metadata to what filesystem shows
+    * like git notes — commits exist independently, notes annotate
+    * no sync watchers for structure, no conflict resolution
+
+  * design principles
+    * filesystem changes can't corrupt SQLite
+      * worst case: orphaned rows (hidden, harmless)
+    * SQLite loss can't corrupt filesystem
+      * delete nap.db → metadata gone, project untouched
+      * reconciliation rebuilds from filesystem
+    * reconciliation is additive, never destructive
+    * "what exists?" → filesystem
+    * "what's the status?" → SQLite
+
+  * SQLite schema
+    * database at `.nap/nap.db`
+    * init scripts, no migration framework for v2
+      * wipe and re-init for testing
+      * CREATE TABLE IF NOT EXISTS — idempotent
+
     * nepics
-      * id, name, slug, created_at, napkin_dir
-    * sessions
-      * id, nepic_id, name, status, parent_id, cwd, command
-      * created_at, exited_at
-      * session_key — claude session ID for resume
-    * agents
-      * id, session_id, napkin_slug, role, prompt_path
-  * dual-truth model
-    * SQLite: runtime state (statuses, timing, relationships)
-    * filesystem: content (napkins, specs, prompts, responses)
-    * SQLite authoritative for status — always wins on conflict
-    * filesystem authoritative for content — human edits in editor
-  * board symlinks
-    * `40-board/` dirs: `10-draft/`, `20-backlog/`, `30-todo/`, `40-doing/`, `50-review/`, `60-done/`
-    * symlinks point back to canonical napkin dir in `30-napkins/`
-      * `40-board/40-doing/0100-feature → ../../30-napkins/0100-feature`
-    * status change in SQLite → app moves symlink to new board dir
-    * human moves symlink manually → app detects → updates SQLite
-    * conflict resolution: SQLite wins
-  * on app launch
-    * read `.nap/nap.db`
-    * restore session list, nepic state, agent relationships
-    * mark all previously "running" sessions as "exited" (ptys are gone)
-    * restore UI: which nepic was active, which terminal was focused
+      * id (uuid), name, slug, created_at, is_active
 
-* session continuity
-  * architect resume
-    * store claude session ID (session_key) in SQLite
-    * on app reopen: auto-run `claude --resume <session-key>` in architect terminal
-    * `claude --resume` is the only reliable mechanism
-  * agent state on restart
-    * ptys are gone — processes died when app closed
-    * SQLite knows: who was running, who was done, parent-child tree
-    * UI shows ghost state: "this agent was running when you left"
-      * gray dot with "last seen" timestamp
-    * no auto-resume for agents — only architect resumes
-      * agents are short-lived, architect is long-lived
-  * what persists across restart
-    * nepic structure, active nepic
-    * session list with statuses and relationships
-    * architect session key for resume
-    * which terminal was focused, sidebar state
-  * what doesn't persist
-    * pty processes (obviously)
-    * terminal scrollback (xterm buffers are in-memory)
-      * `nap log` output could be saved to disk — stretch goal
-    * scroll lock state per terminal
+    * napkins
+      * id (uuid), nepic_id, slug
+      * status (backlog/todo/doing/review/done)
+      * created_at
+
+    * sessions
+      * id (uuid), nepic_id
+      * napkin_slug (nullable — architect has no napkin)
+      * name, role (architect/test-arch/fs-eng/test-eng)
+      * status (running/done/exited)
+      * cc_session_uuid
+        * pre-assigned by NAP (crypto.randomUUID)
+        * passed to claude via `--session-id <uuid>`
+        * enables `claude --resume <uuid>` later
+      * parent_id (nullable), command, cwd
+      * created_at, exited_at
+
+    * ui_state (single row)
+      * active_nepic_id, active_terminal_id, sidebar_visible
+
+  * reconciliation on launch
+    * walk `30-napkins/` → list napkin dirs
+    * walk each `agents/` → list agent dirs
+    * match against SQLite by key
+      * match → reconnect with stored metadata
+      * dir exists, no SQLite → new entry, default status
+      * SQLite exists, no dir → orphaned, hide, don't delete
+    * performance: 40 napkins × 3 agents = milliseconds
+
+  * board symlinks
+    * `40-board/` dirs with symlinks to `30-napkins/`
+    * one API for status changes
+      * updates SQLite + moves symlink together
+      * used by CLI and app
+    * symlinks are editor lenses
+      * `ls 40-board/40-doing/` in terminal
+      * browse project status without opening app
+
+
+* filesystem service
+
+  * main process watches `30-napkins/` via fs.watch (recursive)
+  * on change: re-read affected napkin dir
+    * readdir → artifact existence (.nap.md, .spec.md, etc.)
+    * read first N lines of .nap.md → kanban card bullets
+    * push update to renderer via IPC
+  * renderer updates store → React re-renders sidebar + kanban
+  * catches everything
+    * agent file writes, human edits, git operations
+  * `30-napkins/` is small and stable — watching is cheap
+
+
+* CC session management
+
+  * launch flow
+    * NAP generates UUID
+    * stores in SQLite (sessions.cc_session_uuid)
+    * spawns: `claude --session-id <uuid> --verbose "read prompt.md ..."`
+    * UUID known before session starts — no parsing needed
+
+  * resume flow
+    * architect: auto-resume on app restart
+      * `claude --resume <uuid>` in architect terminal
+      * full conversation history preserved
+    * agents: manual for v2
+      * UI shows orphaned dot style — "was running when you left"
+      * human can click → resume
+      * auto-resume all = fast-follow napkin
+
+  * retired architects
+    * old architect session stays in SQLite
+    * visible in sidebar, browsable
+    * `claude --resume <uuid>` to bring back
+    * poke for historical context
+
 
 * nepic spaces
-  * each nepic = one milestone/era of the project
-    * own napkin directory, architect, roadmap
-    * same codebase, same `src/`
-  * directory structure per nepic
-    * `10-docs/` — mega napkin, milestones, handoffs
-    * `20-architects/` — `001-architect/`, `002-architect/`, etc.
-    * `30-napkins/` — canonical napkin dirs, never move
-    * `40-board/` — symlinked status dirs
-  * creating a new nepic
-    * (+) in left gutter
-    * scaffolds `.nap/nepics/NN-name/` with template dirs
-    * prompts and onboarding templates are customizable
-      * live outside app code — skill/workflow concern
-    * creates row in SQLite nepics table
-    * switches UI to new nepic
+
+  * each nepic = one milestone/era
+    * own napkins, architect, roadmap
+    * same codebase
+
+  * clicking (+) — new nepic
+    * scaffold `.nap/nepics/NN-name/`
+      * 10-docs/, 15-feedback/, 20-architects/, 30-napkins/, 40-board/
+    * SQLite: insert nepic, set is_active
+    * architect boots: pty spawned, session created
+    * onboarding package generation
+      * skill/workflow concern, not app code
+      * TBD: autonomous or human-reviewed
+
   * switching nepics
-    * click icon in left gutter
-    * middle column swaps to that nepic's napkin browser
-    * terminal swaps to that nepic's architect (or last viewed agent)
+    * click icon in gutter
+    * sidebar swaps to that nepic's browser
+    * terminal swaps to that nepic's architect
     * all sessions from other nepics keep running
-      * ptys don't care about UI focus
-  * architect lifecycle within a nepic
-    * first architect: `001-architect/`
-    * runs out of context → writes handoff to `10-docs/`
-    * new architect: `002-architect/`, reads handoff + inputs
-    * session key stored in SQLite for each architect
-  * previous nepics are read-only reference
-    * visible in gutter, browsable, terminals viewable if alive
 
-* board view
-  * toggle in middle column header — tree icon / board icon
-  * status columns: draft → backlog → todo → doing → review → done
-  * compact napkin cards
-    * feature name
-    * agent progress (e.g., 3/5 agents done)
-    * status dot
-    * click → expand in tree view
-  * reads from SQLite (status) + filesystem (napkin names)
-  * drag-to-reorder / change status — stretch goal
-    * updates SQLite + moves symlink
+  * architect lifecycle
+    * runs out of context → writes handoff to own folder
+      * `20-architects/001-architect/handoff.md`
+    * new architect: `002-architect/`, reads predecessor's handoff
+    * old architect: retired, browsable, resumable
 
-* what carries over from v1
-  * terminal management — xterm.js + Canvas + node-pty + IPC bridge
-    * DOM reparenting for switching
-    * Canvas on every terminal, never disposed
-    * 100k scrollback
-  * socket server + CLI
-    * per-project socket at `.nap/sock`
-    * all commands: start, ps, poke, nap, done, kill, close, log, peek, open
-    * ndjson protocol, request-response with id matching
-  * electron-vite + TypeScript strict + React 18 + zustand
-  * test infrastructure — vitest (small) + playwright (medium)
-  * design language
-    * dark theme: #1e1e1e bg, #252526 sidebar, #3c3c3c borders
-    * status dots: green #22c55e, blue #3b82f6, gray #6b7280
-    * scroll lock borders: dim blue #2a5a9a, dim amber #8a6a2a
-    * font: Menlo, Monaco, monospace, 14px
-    * active card: #37373d bg, #007acc left border
 
-* what changes from v1
-  * flat sidebar → three-column layout with napkin browser
-  * in-memory state → SQLite persistence
-  * single workspace → nepic spaces
-  * single architect → per-nepic architects with handoff
-  * no board → kanban board view
-  * terminal names → napkin cards with nested agents
+* nap start flow (updated)
+  * CLI sends start request via socket
+  * main process:
+    * generate CC session UUID
+    * create session in SQLite with UUID
+    * spawn pty: `claude --session-id <uuid> --verbose "..."`
+    * set NAP_SESSION_ID env var
+    * IPC: notify renderer
+  * renderer: create xterm, add to registry + store
+  * sidebar: new dot appears under napkin card
 
-* tech additions
-  * better-sqlite3 (native, synchronous)
-  * tree view component (react-arborist or hand-rolled)
+
+* status change API
+  * single function: changeNapkinStatus(slug, newStatus)
+    * updates SQLite napkins table
+    * moves symlink in `40-board/`
+    * IPC: notify renderer
+  * used by CLI and app
+
+
+* clean quit flow
+  * on before-quit
+    * save UI state to SQLite
+    * session statuses already accurate
+    * kill ptys, wait for exit callbacks (2s timeout)
+    * close SQLite connection
+  * crash: no special handling
+    * reconciliation handles stale state on next launch
+
+
+* design language (carry from v1)
+  * dark theme: #1e1e1e bg, #252526 sidebar, #3c3c3c borders
+  * status dots
+    * running: green #22c55e (filled ●, pulsing)
+    * done: blue #3b82f6 (filled ●)
+    * napping: amber (hollow ◌)
+    * exited: gray #6b7280 (hollow ◌)
+    * orphaned: dotted border, dimmed
+  * artifact text: #9cdcfe (file blue)
+  * scroll lock borders: dim blue #2a5a9a, dim amber #8a6a2a
+  * font: Menlo, Monaco, monospace, 14px
+  * active card: #37373d bg, #007acc left border
+
+
+* milestones
+
+  * M0 — design sprint ✅
+    * 0100-design-sprint — validated
+
+  * M1 — storage
+    * 0200-sqlite-setup
+      * better-sqlite3, init scripts, schema
+      * store sessions with CC session UUIDs
+      * nap start updated: generate UUID, pass --session-id
+    * 0300-status-api
+      * single API: SQLite + symlink together
+      * used by CLI and app
+
+  * M2 — real layout (built in layers)
+    * 0400-layout-with-mock-data
+      * three-column React layout, hardcoded data
+      * input: design sprint HTML mocks + screenshots
+      * match v2-final.html exactly
+    * 0500-filesystem-service
+      * fs.watch on 30-napkins/ (recursive)
+      * reads dirs, artifacts, .nap.md content
+      * pushes updates via IPC
+    * 0600-live-wiring
+      * connect fs service to React components
+      * sidebar: napkin list + agent dots from store
+      * kanban overlay: napkin bullets + statuses
+      * breadcrumb navigation in terminal header
+
+  * M3 — session continuity
+    * 0700-clean-quit
+      * save UI state to SQLite on quit
+      * restore on launch
+    * 0800-architect-resume
+      * auto `claude --resume <uuid>` on reopen
+      * agent "was running" states
+    * 0900-reconciliation
+      * filesystem walk vs SQLite on launch
+      * match / new / orphan handling
+
+  * M4 — nepic spaces
+    * 1000-nepic-creation
+      * (+) button, scaffold dirs, SQLite insert, architect boot
+    * 1100-nepic-switching
+      * gutter click swaps middle + terminal
+
 
 * out of scope
   * collaborative editing (multiple humans)
   * cloud sync / remote agents
   * auto-unfolding pipeline
   * agent-to-agent communication beyond start/done/nap
-  * visual diff of napkin changes
+  * visual diff / history per agent (future virtual entries)
   * mobile / web version
-  * poke as Enter — v3 collaboration patterns
+  * poke as Enter — v3 collaboration
+  * auto-resume all agents (fast-follow)
+  * drag-to-reorder in kanban
