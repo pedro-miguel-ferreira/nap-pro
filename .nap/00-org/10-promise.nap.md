@@ -19,6 +19,14 @@ One napkin per feature. Stack them — that's your system. Nothing to skim. Noth
 
 Agents talk to each other. Agents unblock each other. Agents poke you only when they actually need you. The rest of the time: go take a nap.
 
+### Why not built-in subagents?
+
+Claude Code can spawn subagents internally. They run, return a result, disappear. You never see them think. You can't talk to them. You can't watch them work. They're functions, not teammates.
+
+Every NAP agent is a full Claude Code session running in its own terminal. Full message history. Full tool access. Full skills. The human can click on any agent, watch it think in real time, ask follow-up questions, invoke skills, steer it mid-task. The agent is a first-class citizen — not buried inside another agent's context.
+
+This is the whole point. Agents are visible, interactive, inspectable. Not hidden behind an API call.
+
 ### 3. Inspect
 
 Come back from your nap. Everything that happened is there.

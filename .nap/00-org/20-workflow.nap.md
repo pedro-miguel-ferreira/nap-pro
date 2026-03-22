@@ -88,6 +88,8 @@ Test eng reports failures → fullstack eng fixes → test eng re-runs. Loop unt
 
 ## Launching agents
 
+Every agent is a full Claude Code session in its own terminal. Not a subagent buried inside another session. The human can click on any agent in the sidebar, watch it work, talk to it, invoke skills — full Claude Code capabilities.
+
 Each agent gets a directory inside the napkin:
 
 ```
@@ -103,7 +105,9 @@ Architect launches via NAP CLI:
 nap start 'claude --verbose "read .nap/.../001-test-arch-feature/prompt.md and write your response to .nap/.../001-test-arch-feature/response.md"' --name 001-test-arch-feature
 ```
 
-Agent appears in the sidebar. Architect waits:
+This spawns a real Claude Code session in a real terminal. The agent appears in the sidebar with a green dot. The human can click it and watch it think.
+
+Architect waits:
 
 ```bash
 nap nap 001-test-arch-feature --timeout 300
