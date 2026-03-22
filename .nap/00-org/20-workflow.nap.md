@@ -1,36 +1,82 @@
 # Workflow
 
-## Stages
+## Where things live
 
-A feature moves through directories. Moving it IS the status change.
+Napkins live in `30-napkins/` and never move. That's the canonical path — all references point there. Status is tracked separately via symlinks in `40-board/`.
 
 ```
-10-backlog/   napkin exists, not yet picked up
-20-todo/      architect is writing spec + journeys
-30-doing/     agents are working
-40-done/      shipped, tests green
+30-napkins/
+  0100-feature/          ← canonical, never moves
+    0100-feature.nap.md
+    0100-feature.spec.md
+    0100-feature.journeys.md
+    0100-feature.test.md
+    agents/
+      001-test-arch-feature/
+        prompt.md
+        response.md
+      002-fs-eng-feature/
+        prompt.md
+        response.md
+      003-test-eng-feature/
+        prompt.md
+        response.md
+
+40-board/
+  10-draft/
+  20-backlog/
+  30-todo/
+  40-doing/
+    0100-feature → ../../30-napkins/0100-feature   (symlink)
+  50-review/
+  60-done/
 ```
 
-`mv .napkins/10-backlog/0100-feature .napkins/20-todo/` — that's your standup.
+## Status transitions
 
-## The Happy Path
+Moving a symlink IS the status change. The canonical path never breaks.
 
-### 1. Napkin -> Spec (architect, in conversation with human)
+```bash
+# napkin shaped, ready for backlog
+ln -s ../../30-napkins/0100-feature 40-board/20-backlog/0100-feature
+
+# scheduled for implementation
+rm 40-board/20-backlog/0100-feature
+ln -s ../../30-napkins/0100-feature 40-board/30-todo/0100-feature
+
+# agents launched
+rm 40-board/30-todo/0100-feature
+ln -s ../../30-napkins/0100-feature 40-board/40-doing/0100-feature
+
+# agents done, ready for review
+rm 40-board/40-doing/0100-feature
+ln -s ../../30-napkins/0100-feature 40-board/50-review/0100-feature
+
+# human approves
+rm 40-board/50-review/0100-feature
+ln -s ../../30-napkins/0100-feature 40-board/60-done/0100-feature
+```
+
+**Who moves symlinks:** the architect, as part of the workflow. When SQLite lands (M1), the app automates this.
+
+## The happy path
+
+### 1. Napkin → spec (architect + human)
 
 Architect reads the napkin. Writes:
-- `NNNN-feature.spec.md` — technical spec, decomposed from napkin bullets
-- `NNNN-feature.journeys.md` — concrete developer/user journeys ("user does X, system does Y")
+- `NNNN-feature.spec.md` — min spec, only constraints the implementer can't derive
+- `NNNN-feature.journeys.md` — concrete developer/user journeys
 
-### 2. Spec -> Test Architecture (test-architect agent)
+### 2. Spec → test architecture (test-architect agent)
 
 Test architect reads spec + journeys. Writes:
 - `NNNN-feature.test.md` — strategic test cases focused on integration seams
 
-Launched by architect. Gets its own context window, explores the codebase freely.
+Launched by architect via `nap start`. Gets its own context window.
 
 ### 3. Code (fullstack-eng agent)
 
-Reads spec + test.md. Writes code shaped so the tests are possible — proper APIs, modules, boundaries at the right places.
+Reads spec + test.md. Writes code shaped so the tests are possible — proper APIs, module boundaries, injectable dependencies.
 
 ### 4. Tests (test-eng agent)
 
@@ -38,49 +84,62 @@ Reads test.md + the code. Writes actual test code. Runs it. Reports failures.
 
 ### 5. Iterate
 
-Test eng reports failures -> fullstack eng fixes -> test eng re-runs. Loop until green.
+Test eng reports failures → fullstack eng fixes → test eng re-runs. Loop until green.
 
-## How Agents Communicate
+## Launching agents
 
-Through files. Not conversation.
+Each agent gets a directory inside the napkin:
 
 ```
-agents/
-  001-fs-eng-electron-shell/
-    prompt.md       <- architect writes, agent reads
-    response.md     <- agent writes, architect reads
-    questions.md    <- agent writes questions, architect answers
+30-napkins/0100-feature/agents/
+  001-test-arch-feature/
+    prompt.md          ← architect writes
+    response.md        ← agent writes when done
 ```
 
-## Launching an Agent
-
-Open a new terminal tab and run:
+Architect launches via NAP CLI:
 
 ```bash
-claude --verbose "read <full-path>/prompt.md and write your response to <full-path>/response.md"
+nap start 'claude --verbose "read .nap/.../001-test-arch-feature/prompt.md and write your response to .nap/.../001-test-arch-feature/response.md"' --name 001-test-arch-feature
 ```
 
-Interactive session. Full thinking visible in scrollback. `--verbose` shows reasoning.
+Agent appears in the sidebar. Architect waits:
 
-## The prompt.md Contract
+```bash
+nap nap 001-test-arch-feature --timeout 300
+```
+
+Blocks until agent signals completion. Then architect reads `response.md`.
+
+**Critical:** agents must call `nap done` when finished. They won't do it automatically — the prompt must tell them explicitly.
+
+## The prompt.md contract
 
 Every prompt.md is self-contained. It includes:
-- Role definition (or path to role file)
-- Mandatory reading list (exact file paths)
+- Role (or path to role file)
+- What to read (exact file paths)
 - What to produce
 - Where to write output
-- What to do when stuck (write to questions.md, stop)
 
 If you handed this prompt to a stranger with access to the repo, they could do the job.
 
-## Questions Flow
+**Every prompt must end with this, verbatim:**
 
-Agent is stuck -> writes to `questions.md` -> stops.
-Architect reads questions -> updates spec or answers in questions.md -> re-launches agent.
+```
+CRITICAL: when you are done, write your response to <path>/response.md, then run `nap done` in your terminal. The architect is blocked waiting — without this, the pipeline stalls.
+```
 
-## Failure Flow
+Last line of the prompt. Every time. Agents forget if it's buried in the middle.
 
-Test eng reports failure -> architect decides:
+## Agent communication
+
+- **Files:** prompt.md (architect → agent), response.md (agent → architect)
+- **NAP CLI:** `nap poke` (send message), `nap nap` (wait for completion), `nap done` (signal done)
+- **Questions:** agent writes to `questions.md`, calls `nap done` with a message. Architect reads, updates spec or answers, re-launches.
+
+## Failure flow
+
+Test eng reports failure → architect decides:
 - Code bug? Route to fullstack eng.
 - Spec problem? Update spec, re-run from step 3.
 - Test wrong? Update test.md, re-run test eng.

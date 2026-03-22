@@ -55,10 +55,14 @@ UI tests (clicking buttons, visual correctness) are fragile and slow. Mark these
   - **Test size** (small / medium / big)
   - **Verification method** — what programmatic assertion proves this works (e.g., "read xterm buffer after switch, verify line count matches pre-switch"), or "manual" if no programmatic path exists
 
+## When done
+
+**CRITICAL: run `nap done` in your terminal when you are finished.** Write your response to `response.md` first, then `nap done`. The architect is blocked waiting for this signal — without it, the entire pipeline stalls.
+
 ## Mandatory Reading
 
 1. The role file (this file)
-2. `00-org/00-promise.md`
+2. `.nap/00-org/10-promise.nap.md`
 3. The feature's `.spec.md`
 4. The feature's `.journeys.md`
 5. Existing codebase as needed (explore freely)

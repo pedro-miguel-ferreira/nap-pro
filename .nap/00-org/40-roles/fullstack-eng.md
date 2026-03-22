@@ -24,11 +24,15 @@ Agent. Reads the spec and test architecture. Writes code.
 - `response.md` — summary of what was built, decisions made, anything the architect should review
 - `questions.md` — if stuck or spec is unclear
 
+## When done
+
+**CRITICAL: run `nap done` in your terminal when you are finished.** Write your response to `response.md` first, then `nap done`. The architect is blocked waiting for this signal — without it, the entire pipeline stalls.
+
 ## Mandatory Reading
 
 1. The role file (this file)
-2. `00-org/00-promise.md`
-3. The feature's `.napkin.md`
+2. `.nap/00-org/10-promise.nap.md`
+3. The feature's `.nap.md`
 4. The feature's `.spec.md`
 5. The feature's `.journeys.md`
 6. The feature's `.test.md`
