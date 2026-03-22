@@ -24,6 +24,10 @@ export function initSessionStore(database: Database.Database): void {
   db = database;
 }
 
+export function closeSessionStore(): void {
+  db = null;
+}
+
 function ensureDb(): Database.Database {
   if (!db) throw new Error('Session store not initialized — call initSessionStore() first');
   return db;

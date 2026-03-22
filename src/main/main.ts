@@ -21,6 +21,7 @@ function getPtyCaptureStream(): fs.WriteStream {
 }
 import {
   initSessionStore,
+  closeSessionStore,
   createSession,
   getSession,
   getAllSessions,
@@ -132,9 +133,13 @@ function createPtyProcess(
     ptys.delete(id);
     outputBuffers.delete(id);
     readyTerminals.delete(id);
-    const session = getSession(id);
-    if (session && session.status !== 'done') {
-      setSessionStatus(id, 'exited');
+    try {
+      const session = getSession(id);
+      if (session && session.status !== 'done') {
+        setSessionStatus(id, 'exited');
+      }
+    } catch {
+      // DB already closed during shutdown — safe to ignore
     }
     pendingExits--;
     checkQuit();
@@ -567,6 +572,7 @@ process.on('beforeExit', () => {
 
 app.on('will-quit', () => {
   stopSocketServer();
+  closeSessionStore();
   closeDatabase();
 });
 
