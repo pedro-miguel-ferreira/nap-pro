@@ -16,7 +16,7 @@
   * filesystem watching reliable enough for live updates
 
 * carry forward (proven in v1)
-  * terminal management — xterm + WebGL + node-pty solid
+  * terminal management — xterm + Canvas + node-pty solid
   * socket + CLI — protocol proven
   * pipeline — four roles, napkin → spec → test → code
 

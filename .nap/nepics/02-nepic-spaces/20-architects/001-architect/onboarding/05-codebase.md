@@ -5,7 +5,7 @@
 - **Electron 33+** — macOS only for now
 - **TypeScript** — strict mode, `tsc --noEmit` must pass
 - **React 18 + Zustand** — renderer UI and state
-- **xterm.js + WebGL addon** — terminal rendering
+- **xterm.js + Canvas addon** — terminal rendering (WebGL attempted but falls back to Canvas)
 - **node-pty** — pty management (native module, needs electron-rebuild)
 - **electron-vite** — build toolchain with HMR dev server
 - **Vitest** — small tests (pure logic)

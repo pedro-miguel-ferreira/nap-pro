@@ -37,9 +37,9 @@
     * default: architect terminal
     * click agent in middle → switches to that agent's terminal
       * same DOM reparenting as v1 terminal switching
-      * WebGL addon survives, no re-rendering
+      * Canvas addon survives, no re-rendering
     * all v1 features preserved
-      * WebGL rendering, 100k scrollback, addon-fit
+      * Canvas rendering, 100k scrollback, addon-fit
       * scroll lock (follow / read)
       * clickable file paths (Cmd+click)
 
@@ -161,9 +161,9 @@
     * updates SQLite + moves symlink
 
 * what carries over from v1
-  * terminal management — xterm.js + WebGL + node-pty + IPC bridge
+  * terminal management — xterm.js + Canvas + node-pty + IPC bridge
     * DOM reparenting for switching
-    * WebGL on every terminal, never disposed
+    * Canvas on every terminal, never disposed
     * 100k scrollback
   * socket server + CLI
     * per-project socket at `.nap/sock`
