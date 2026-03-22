@@ -14,8 +14,8 @@ From the Google Testing Book: you can't test quality into code. Quality is built
 
 ### Test sizes (Google terminology)
 
-- **Small tests** — pure logic, no I/O, no Electron. Vitest + jsdom. Store actions, data transforms, state machines. Fast, deterministic.
-- **Medium tests** — integration across subsystems inside one process or across IPC. This is where most of our value lives. Playwright + Electron: `page.evaluate()` drives the real renderer (real xterm, real WebGL, real DOM), `app.evaluate()` drives the main process (real pty, real IPC). No UI automation — call store actions, read buffers, send IPC directly.
+- **Small tests** — pure logic, no I/O, no Electron, no native modules. Vitest + jsdom. Store actions, data transforms, state machines, pure functions. Fast, deterministic. **Never import better-sqlite3 or node-pty in vitest** — they are compiled for Electron's Node ABI and will crash under system Node.
+- **Medium tests** — integration across subsystems inside one process or across IPC. This is where most of our value lives. Playwright + Electron: `page.evaluate()` drives the real renderer (real xterm, real Canvas, real DOM), `app.evaluate()` drives the main process (real pty, real IPC, real SQLite). No UI automation — call store actions, read buffers, send IPC directly. **All tests that touch native modules (SQLite, pty) must be medium tests.**
 - **Big tests** — full end-to-end with real CLI, real socket, real app. Reserved for the integration test in 0500.
 
 Most test cases should be **small or medium**. Strive for ~80% confidence from programmatic integration tests.
