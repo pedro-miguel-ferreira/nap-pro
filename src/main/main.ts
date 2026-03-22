@@ -1,9 +1,13 @@
 import { app, BrowserWindow, ipcMain, IpcMainEvent, Menu, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import type { IPty, IDisposable } from 'node-pty';
 import * as pty from 'node-pty';
 import { startSocketServer, stopSocketServer } from './socket-server';
+import Database from 'better-sqlite3';
+import { initDatabase, getDbPath, closeDatabase, SCHEMA } from './database';
+import { injectSessionId } from './inject-session-id';
 
 // DEBUG: capture raw PTY output to file for scroll analysis
 const PTY_CAPTURE_PATH = path.join(app.getPath('home'), 'nap-pty-capture.log');
@@ -16,10 +20,12 @@ function getPtyCaptureStream(): fs.WriteStream {
   return ptyCaptureStream;
 }
 import {
+  initSessionStore,
   createSession,
   getSession,
   getAllSessions,
   setSessionStatus,
+  setSessionDone,
   removeSession,
 } from './session-store';
 import { resolveByName } from './name-resolver';
@@ -349,7 +355,10 @@ async function handleSocketRequest(msg: unknown): Promise<Record<string, unknown
         cwd: req.cwd || projectCwd,
         parentId: req.parentId ?? null,
       });
-      createPtyProcess(session.id, { command: req.command, cwd: req.cwd });
+      const ptyCommand = session.ccSessionUuid
+        ? injectSessionId(req.command, session.ccSessionUuid)
+        : req.command;
+      createPtyProcess(session.id, { command: ptyCommand, cwd: req.cwd });
 
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('socket:terminal-created', {
@@ -369,6 +378,7 @@ async function handleSocketRequest(msg: unknown): Promise<Record<string, unknown
         id: s.id,
         name: s.name,
         status: s.status,
+        ccSessionUuid: s.ccSessionUuid,
         parent: s.parentId ? getSession(s.parentId)?.name ?? '-' : '-',
         cwd: s.cwd,
         uptime: formatUptime(s.createdAt),
@@ -435,6 +445,7 @@ async function handleSocketRequest(msg: unknown): Promise<Record<string, unknown
         ok: true,
         status: target.status,
         doneMessage: target.doneMessage ?? '',
+        ccSessionUuid: target.ccSessionUuid,
       };
     }
 
@@ -449,8 +460,7 @@ async function handleSocketRequest(msg: unknown): Promise<Record<string, unknown
         return { id: req.id, ok: true };
       }
 
-      session.status = 'done';
-      session.doneMessage = req.message;
+      setSessionDone(session.id, req.message);
 
       // Notify renderer of status change
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -493,6 +503,30 @@ function formatUptime(createdAt: number): string {
 }
 
 app.whenReady().then(async () => {
+  // Init database BEFORE socket server — requests need the db.
+  const dbPath = getDbPath(projectCwd);
+  const database = initDatabase(dbPath);
+  initSessionStore(database);
+
+  // Expose internals for Playwright tests (session-store uses native modules
+  // compiled for Electron's ABI — vitest can't load them)
+  if (process.env.NAP_TEST) {
+    globalThis.__napTest = {
+      createSession,
+      getSession,
+      getAllSessions,
+      setSessionStatus,
+      setSessionDone,
+      removeSession,
+      SCHEMA,
+      Database,
+      getDb: () => database,
+      path,
+      fs,
+      os,
+    };
+  }
+
   // Start socket server BEFORE creating the window.
   // If another instance is running, quit immediately without creating
   // any windows — creating a window then quitting mid-init causes a
@@ -533,6 +567,7 @@ process.on('beforeExit', () => {
 
 app.on('will-quit', () => {
   stopSocketServer();
+  closeDatabase();
 });
 
 app.on('window-all-closed', () => {

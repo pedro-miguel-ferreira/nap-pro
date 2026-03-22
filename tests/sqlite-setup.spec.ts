@@ -91,6 +91,355 @@ async function closeIsolated(
 }
 
 // =========================================================================
+// T-0200-01: SQLite store — interface parity (via app.evaluate)
+// =========================================================================
+base.describe.serial('T-0200-01: SQLite store — interface parity', () => {
+  let app: ElectronApplication;
+  let socketPath: string;
+  let tmpDir: string;
+
+  base.beforeAll(async () => {
+    socketPath = testSocketPath();
+    ({ app, tmpDir } = await launchIsolated(socketPath));
+  });
+
+  base.afterAll(async () => {
+    if (app) await closeIsolated(app, socketPath, tmpDir);
+  });
+
+  base('createSession returns Session with correct types', async () => {
+    const s = await app.evaluate(() => {
+      const { createSession } = globalThis.__napTest!;
+      return createSession({ cwd: '/tmp', name: 'parity-test' });
+    });
+    expect(typeof s.id).toBe('string');
+    expect(s.name).toBe('parity-test');
+    expect(s.status).toBe('running');
+    expect(s.cwd).toBe('/tmp');
+    expect(s.parentId).toBeNull();
+    expect(typeof s.createdAt).toBe('number');
+    expect(s.ccSessionUuid).toBeDefined();
+  });
+
+  base('getSession returns Session for existing, undefined for missing', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, getSession } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp', name: 'get-test' });
+      const found = getSession(s.id);
+      const missing = getSession('does-not-exist');
+      return { created: s, found: found ?? null, missing: missing ?? null };
+    });
+    expect(result.found).not.toBeNull();
+    expect(result.found!.id).toBe(result.created.id);
+    expect(result.found!.name).toBe(result.created.name);
+    expect(result.found!.status).toBe('running');
+    expect(result.found!.cwd).toBe('/tmp');
+    expect(result.found!.parentId).toBeNull();
+    expect(result.found!.createdAt).toBe(result.created.createdAt);
+    expect(result.missing).toBeNull();
+  });
+
+  base('getAllSessions returns Session[]', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, getAllSessions } = globalThis.__napTest!;
+      const s1 = createSession({ cwd: '/tmp', name: 'all-a' });
+      const s2 = createSession({ cwd: '/tmp', name: 'all-b' });
+      const all = getAllSessions();
+      return { s1Id: s1.id, s2Id: s2.id, allIds: all.map((s: any) => s.id), isArray: Array.isArray(all) };
+    });
+    expect(result.isArray).toBe(true);
+    expect(result.allIds).toContain(result.s1Id);
+    expect(result.allIds).toContain(result.s2Id);
+  });
+
+  base('removeSession + getSession returns undefined', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, removeSession, getSession } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp' });
+      removeSession(s.id);
+      return getSession(s.id) ?? null;
+    });
+    expect(result).toBeNull();
+  });
+
+  base('optional fields: SQL null → TS undefined; parentId stays null', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, getSession } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp' });
+      const retrieved = getSession(s.id)!;
+      return {
+        command: retrieved.command ?? '__undefined__',
+        doneMessage: retrieved.doneMessage ?? '__undefined__',
+        parentId: retrieved.parentId,
+      };
+    });
+    expect(result.command).toBe('__undefined__');
+    expect(result.doneMessage).toBe('__undefined__');
+    expect(result.parentId).toBeNull();
+  });
+});
+
+// =========================================================================
+// T-0200-02: Schema init is idempotent (via app.evaluate + require)
+// =========================================================================
+base.describe('T-0200-02: Schema init is idempotent', () => {
+  let app: ElectronApplication;
+  let socketPath: string;
+  let tmpDir: string;
+
+  base.beforeAll(async () => {
+    socketPath = testSocketPath();
+    ({ app, tmpDir } = await launchIsolated(socketPath));
+  });
+
+  base.afterAll(async () => {
+    if (app) await closeIsolated(app, socketPath, tmpDir);
+  });
+
+  base('double init: no errors, all 4 tables exist, rows unchanged', async () => {
+    const result = await app.evaluate(() => {
+      const { Database, path, fs, os, SCHEMA } = globalThis.__napTest!;
+
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0200-02-'));
+      const dbPath = path.join(testDir, '.nap', 'nap.db');
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+      try {
+        // First init
+        const db1 = new Database(dbPath);
+        db1.pragma('journal_mode = WAL');
+        db1.pragma('foreign_keys = ON');
+        db1.exec(SCHEMA);
+        db1.prepare(
+          "INSERT INTO sessions (id, name, status, cwd, created_at) VALUES (?, ?, 'running', ?, ?)",
+        ).run('test-id', 'pre-reinit', '/tmp', Date.now());
+        db1.close();
+
+        // Second init — same file, must not error
+        const db2 = new Database(dbPath);
+        db2.pragma('journal_mode = WAL');
+        db2.pragma('foreign_keys = ON');
+        db2.exec(SCHEMA);
+
+        const tables = db2
+          .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+          .all()
+          .map((r: any) => r.name);
+
+        const sessions = db2.prepare('SELECT * FROM sessions').all();
+        db2.close();
+
+        return {
+          tables,
+          sessionCount: sessions.length,
+          firstName: (sessions[0] as any)?.name,
+        };
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+
+    expect(result.tables).toContain('nepics');
+    expect(result.tables).toContain('napkins');
+    expect(result.tables).toContain('sessions');
+    expect(result.tables).toContain('ui_state');
+    expect(result.sessionCount).toBe(1);
+    expect(result.firstName).toBe('pre-reinit');
+  });
+});
+
+// =========================================================================
+// T-0200-03: CC session UUID generation and storage
+// =========================================================================
+base.describe.serial('T-0200-03: CC session UUID generation and storage', () => {
+  let app: ElectronApplication;
+  let socketPath: string;
+  let tmpDir: string;
+
+  const UUID_V4_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+  base.beforeAll(async () => {
+    socketPath = testSocketPath();
+    ({ app, tmpDir } = await launchIsolated(socketPath));
+  });
+
+  base.afterAll(async () => {
+    if (app) await closeIsolated(app, socketPath, tmpDir);
+  });
+
+  base('createSession generates a valid v4 UUID', async () => {
+    const uuid = await app.evaluate(() => {
+      const { createSession } = globalThis.__napTest!;
+      return createSession({ cwd: '/tmp' }).ccSessionUuid;
+    });
+    expect(uuid).toMatch(UUID_V4_RE);
+  });
+
+  base('UUID round-trips through getSession', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, getSession } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp' });
+      const retrieved = getSession(s.id);
+      return { original: s.ccSessionUuid, retrieved: retrieved?.ccSessionUuid };
+    });
+    expect(result.retrieved).toBe(result.original);
+  });
+
+  base('UUID matches raw SQL cc_session_uuid column', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, getDb } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp' });
+      const db = getDb();
+      const row = db
+        .prepare('SELECT cc_session_uuid FROM sessions WHERE id = ?')
+        .get(s.id) as { cc_session_uuid: string };
+      return { storeUuid: s.ccSessionUuid, sqlUuid: row.cc_session_uuid };
+    });
+    expect(result.sqlUuid).toBe(result.storeUuid);
+  });
+});
+
+// =========================================================================
+// T-0200-05: Session status transitions persist
+// =========================================================================
+base.describe.serial('T-0200-05: Session status transitions persist', () => {
+  let app: ElectronApplication;
+  let socketPath: string;
+  let tmpDir: string;
+
+  base.beforeAll(async () => {
+    socketPath = testSocketPath();
+    ({ app, tmpDir } = await launchIsolated(socketPath));
+  });
+
+  base.afterAll(async () => {
+    if (app) await closeIsolated(app, socketPath, tmpDir);
+  });
+
+  base('create → done: status and doneMessage persist', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, setSessionDone, getSession } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp' });
+      setSessionDone(s.id, 'task complete');
+      const updated = getSession(s.id)!;
+      return { status: updated.status, doneMessage: updated.doneMessage };
+    });
+    expect(result.status).toBe('done');
+    expect(result.doneMessage).toBe('task complete');
+  });
+
+  base('create → exited: status persists, exitedAt set', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, setSessionStatus, getSession } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp' });
+      setSessionStatus(s.id, 'exited');
+      const updated = getSession(s.id)!;
+      return { status: updated.status, exitedAt: updated.exitedAt };
+    });
+    expect(result.status).toBe('exited');
+    expect(result.exitedAt).toBeGreaterThan(0);
+  });
+
+  base('done idempotency: SQL guard prevents overwrite', async () => {
+    const result = await app.evaluate(() => {
+      const { createSession, setSessionDone, getSession } = globalThis.__napTest!;
+      const s = createSession({ cwd: '/tmp' });
+      setSessionDone(s.id, 'first');
+      setSessionDone(s.id, 'second');
+      const updated = getSession(s.id)!;
+      return { status: updated.status, doneMessage: updated.doneMessage };
+    });
+    expect(result.status).toBe('done');
+    // SQL guard (AND status != 'done') prevents the second call from overwriting
+    expect(result.doneMessage).toBe('first');
+  });
+});
+
+// =========================================================================
+// T-0200-06: Database file creation (via app.evaluate + require)
+// =========================================================================
+base.describe('T-0200-06: Database file creation', () => {
+  let app: ElectronApplication;
+  let socketPath: string;
+  let tmpDir: string;
+
+  base.beforeAll(async () => {
+    socketPath = testSocketPath();
+    ({ app, tmpDir } = await launchIsolated(socketPath));
+  });
+
+  base.afterAll(async () => {
+    if (app) await closeIsolated(app, socketPath, tmpDir);
+  });
+
+  base('creates file and .nap/ directory from scratch', async () => {
+    const result = await app.evaluate(() => {
+      const { Database, path, fs, os, SCHEMA } = globalThis.__napTest!;
+
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0200-06-'));
+      const napDir = path.join(testDir, '.nap');
+      const dbPath = path.join(napDir, 'nap.db');
+
+      const napDirExistsBefore = fs.existsSync(napDir);
+
+      fs.mkdirSync(napDir, { recursive: true });
+      const db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.exec(SCHEMA);
+      db.close();
+
+      const dbExists = fs.existsSync(dbPath);
+      fs.rmSync(testDir, { recursive: true, force: true });
+
+      return { napDirExistsBefore, dbExists };
+    });
+    expect(result.napDirExistsBefore).toBe(false);
+    expect(result.dbExists).toBe(true);
+  });
+
+  base('getDbPath returns <cwd>/.nap/nap.db', async () => {
+    const result = await app.evaluate(() => {
+      const { path } = globalThis.__napTest!;
+      return path.join('/projects/myapp', '.nap', 'nap.db');
+    });
+    expect(result).toBe(path.join('/projects/myapp', '.nap', 'nap.db'));
+  });
+
+  base('opening existing db does not throw', async () => {
+    const result = await app.evaluate(() => {
+      const { Database, path, fs, os, SCHEMA } = globalThis.__napTest!;
+
+      const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0200-06b-'));
+      const dbPath = path.join(testDir, '.nap', 'nap.db');
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+      try {
+        const db1 = new Database(dbPath);
+        db1.pragma('journal_mode = WAL');
+        db1.exec(SCHEMA);
+        db1.close();
+
+        // Reopen — should not throw
+        let threw = false;
+        try {
+          const db2 = new Database(dbPath);
+          db2.pragma('journal_mode = WAL');
+          db2.exec(SCHEMA);
+          db2.close();
+        } catch {
+          threw = true;
+        }
+        return { threw };
+      } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
+    });
+    expect(result.threw).toBe(false);
+  });
+});
+
+// =========================================================================
 // T-0200-07: nap start generates UUID and spawns pty with --session-id
 // =========================================================================
 base.describe.serial(

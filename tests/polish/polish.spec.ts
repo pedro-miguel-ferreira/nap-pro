@@ -89,15 +89,16 @@ function runCliAsync(
 
 async function launchApp(
   socketPath: string,
-): Promise<{ app: ElectronApplication; page: Page }> {
+): Promise<{ app: ElectronApplication; page: Page; tmpDir: string }> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0600-'));
   const app = await electron.launch({
-    args: ELECTRON_LAUNCH_ARGS,
+    args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
     env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
   });
   const page = await app.firstWindow();
   await waitForShellReady(page);
   await waitForSocket(socketPath);
-  return { app, page };
+  return { app, page, tmpDir };
 }
 
 async function launchAppWithCwd(
@@ -114,9 +115,10 @@ async function launchAppWithCwd(
   return { app, page, socketPath };
 }
 
-async function closeApp(app: ElectronApplication, ...paths: string[]): Promise<void> {
+async function closeApp(app: ElectronApplication, tmpDir: string, ...paths: string[]): Promise<void> {
   await app.evaluate(({ app }) => app.quit());
   await app.close();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
   for (const p of paths) {
     try { fs.rmSync(p, { recursive: true, force: true }); } catch { /* ok */ }
   }
@@ -338,15 +340,16 @@ base.describe.serial('T-0600 shared app: log, ps, links, filter', () => {
   let app: ElectronApplication;
   let page: Page;
   let socketPath: string;
+  let tmpDir: string;
   let reqId = 1;
 
   base.beforeAll(async () => {
     socketPath = testSocketPath();
-    ({ app, page } = await launchApp(socketPath));
+    ({ app, page, tmpDir } = await launchApp(socketPath));
   });
 
   base.afterAll(async () => {
-    if (app) await closeApp(app, socketPath);
+    if (app) await closeApp(app, tmpDir, socketPath);
   });
 
   // --- T-0600-11: nap log dumps scrollback ---

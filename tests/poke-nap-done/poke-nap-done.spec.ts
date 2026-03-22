@@ -148,9 +148,10 @@ async function waitForStatus(
 
 async function launchApp(
   socketPath: string,
-): Promise<{ app: ElectronApplication; page: Page }> {
+): Promise<{ app: ElectronApplication; page: Page; tmpDir: string }> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0400-'));
   const app = await electron.launch({
-    args: ELECTRON_LAUNCH_ARGS,
+    args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
     env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
   });
   const page = await app.firstWindow();
@@ -159,12 +160,13 @@ async function launchApp(
     if (await isSocketAlive(socketPath)) break;
     await new Promise((r) => setTimeout(r, 100));
   }
-  return { app, page };
+  return { app, page, tmpDir };
 }
 
 async function closeApp(
   app: ElectronApplication,
   socketPath: string,
+  tmpDir: string,
 ): Promise<void> {
   await app.evaluate(({ app }) => app.quit());
   await app.close();
@@ -173,6 +175,7 @@ async function closeApp(
   } catch {
     /* ok */
   }
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
 // =========================================================================
@@ -182,15 +185,16 @@ base.describe.serial('T-0400: poke, nap, done', () => {
   let app: ElectronApplication;
   let page: Page;
   let socketPath: string;
+  let tmpDir: string;
   let reqId = 1;
 
   base.beforeAll(async () => {
     socketPath = testSocketPath();
-    ({ app, page } = await launchApp(socketPath));
+    ({ app, page, tmpDir } = await launchApp(socketPath));
   });
 
   base.afterAll(async () => {
-    if (app) await closeApp(app, socketPath);
+    if (app) await closeApp(app, socketPath, tmpDir);
   });
 
   // --- T-0400-01: poke delivers message to pty stdin ---
@@ -606,14 +610,15 @@ base.describe.serial('T-0400-10: full spawn-wait-receive loop', () => {
   let app: ElectronApplication;
   let page: Page;
   let socketPath: string;
+  let tmpDir: string;
 
   base.beforeAll(async () => {
     socketPath = testSocketPath();
-    ({ app, page } = await launchApp(socketPath));
+    ({ app, page, tmpDir } = await launchApp(socketPath));
   });
 
   base.afterAll(async () => {
-    if (app) await closeApp(app, socketPath);
+    if (app) await closeApp(app, socketPath, tmpDir);
   });
 
   base('parent starts child, nap nap child, child done, parent receives result', async () => {

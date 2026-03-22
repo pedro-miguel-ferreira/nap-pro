@@ -9,15 +9,15 @@ import {
   ptyWrite,
   waitForShellReady,
   launchApp,
+  cleanupApp,
 } from '../helpers';
 
 // ---------- fixture: fresh Electron app per test ----------
 const test = base.extend<{ app: ElectronApplication; page: Page }>({
   app: async ({}, use) => {
-    const app = await launchApp();
+    const { app, tmpDir } = await launchApp();
     await use(app);
-    await app.evaluate(({ app }) => app.quit());
-    await app.close();
+    await cleanupApp(app, tmpDir);
   },
   page: async ({ app }, use) => {
     const page = await app.firstWindow();

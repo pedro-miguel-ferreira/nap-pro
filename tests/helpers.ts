@@ -21,12 +21,23 @@ export function testSocketPath(): string {
  * Launch an isolated Electron NAP instance for testing.
  * Sets NAP_TEST=1 and a unique NAP_SOCKET so it never conflicts
  * with a running NAP instance (including one running the tests).
+ * Each instance gets its own --cwd temp directory (and thus its own .nap/nap.db),
+ * preventing session name collisions across test runs.
  */
-export async function launchApp(): Promise<ElectronApplication> {
-  return electron.launch({
-    args: ELECTRON_LAUNCH_ARGS,
+export async function launchApp(): Promise<{ app: ElectronApplication; tmpDir: string }> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-test-cwd-'));
+  const app = await electron.launch({
+    args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
     env: { ...process.env, NAP_TEST: '1', NAP_SOCKET: testSocketPath() },
   });
+  return { app, tmpDir };
+}
+
+/** Clean up an isolated app: quit, close, remove temp dir */
+export async function cleanupApp(app: ElectronApplication, tmpDir: string): Promise<void> {
+  await app.evaluate(({ app }) => app.quit());
+  await app.close();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 }
 
 /** Wait for shell to produce at least one non-empty line (prompt ready) */

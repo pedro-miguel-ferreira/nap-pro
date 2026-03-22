@@ -54,11 +54,13 @@ function isSocketAlive(socketPath: string): Promise<boolean> {
 base.describe.serial('T-0300-01: socket round-trip latency', () => {
   let app: ElectronApplication;
   let socketPath: string;
+  let tmpDir: string;
 
   base.beforeAll(async () => {
     socketPath = testSocketPath();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-01-'));
     app = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
+      args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
       env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
     });
     const page = await app.firstWindow();
@@ -77,6 +79,7 @@ base.describe.serial('T-0300-01: socket round-trip latency', () => {
       await app.close();
     }
     try { fs.unlinkSync(socketPath); } catch { /* ok */ }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   base('socket-only p95 latency < 50ms over 100 requests', async () => {
@@ -103,13 +106,14 @@ base.describe.serial('T-0300-01: socket round-trip latency', () => {
 base.describe('T-0300-03: stale socket detection on app launch', () => {
   base('app replaces stale socket file and starts successfully', async () => {
     const socketPath = testSocketPath();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-03-'));
 
     // Create a dummy file (not a real socket) at the socket path
     fs.writeFileSync(socketPath, 'stale');
     expect(fs.existsSync(socketPath)).toBe(true);
 
     const app = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
+      args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
       env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
     });
 
@@ -128,6 +132,7 @@ base.describe('T-0300-03: stale socket detection on app launch', () => {
       await app.evaluate(({ app }) => app.quit());
       await app.close();
       try { fs.unlinkSync(socketPath); } catch { /* ok */ }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 });
@@ -138,10 +143,12 @@ base.describe('T-0300-03: stale socket detection on app launch', () => {
 base.describe('T-0300-04: two app instances detect each other', () => {
   base('second instance detects first and quits', async () => {
     const socketPath = testSocketPath();
+    const tmpDirA = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-04a-'));
+    const tmpDirB = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-04b-'));
 
     // Launch app A
     const appA = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
+      args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDirA],
       env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
     });
 
@@ -154,7 +161,7 @@ base.describe('T-0300-04: two app instances detect each other', () => {
 
       // Launch app B with same socket path — should detect A and quit
       const appB = await electron.launch({
-        args: ELECTRON_LAUNCH_ARGS,
+        args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDirB],
         env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
       });
 
@@ -180,6 +187,8 @@ base.describe('T-0300-04: two app instances detect each other', () => {
       await appA.evaluate(({ app }) => app.quit());
       await appA.close();
       try { fs.unlinkSync(socketPath); } catch { /* ok */ }
+      fs.rmSync(tmpDirA, { recursive: true, force: true });
+      fs.rmSync(tmpDirB, { recursive: true, force: true });
     }
   });
 });
@@ -191,11 +200,13 @@ base.describe.serial('T-0300-05: NAP_SESSION_ID propagation', () => {
   let app: ElectronApplication;
   let page: Page;
   let socketPath: string;
+  let tmpDir: string;
 
   base.beforeAll(async () => {
     socketPath = testSocketPath();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-05-'));
     app = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
+      args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
       env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
     });
     page = await app.firstWindow();
@@ -214,6 +225,7 @@ base.describe.serial('T-0300-05: NAP_SESSION_ID propagation', () => {
       await app.close();
     }
     try { fs.unlinkSync(socketPath); } catch { /* ok */ }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   base('terminal pty env contains NAP_SESSION_ID matching its id', async () => {
@@ -285,11 +297,13 @@ base.describe.serial('T-0300-06: nap start creates terminal', () => {
   let app: ElectronApplication;
   let page: Page;
   let socketPath: string;
+  let tmpDir: string;
 
   base.beforeAll(async () => {
     socketPath = testSocketPath();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-06-'));
     app = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
+      args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
       env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
     });
     page = await app.firstWindow();
@@ -307,6 +321,7 @@ base.describe.serial('T-0300-06: nap start creates terminal', () => {
       await app.close();
     }
     try { fs.unlinkSync(socketPath); } catch { /* ok */ }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   base('nap start creates session, card appears, command runs', async () => {
@@ -396,8 +411,9 @@ base.describe.serial('T-0300-06: nap start creates terminal', () => {
 base.describe('T-0300-09: socket cleanup on app quit', () => {
   base('graceful quit removes socket file', async () => {
     const socketPath = testSocketPath();
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-09a-'));
     const app = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
+      args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir],
       env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
     });
 
@@ -414,6 +430,7 @@ base.describe('T-0300-09: socket cleanup on app quit', () => {
     // Quit via Electron
     await app.evaluate(({ app }) => app.quit());
     await app.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
 
     // Socket file should be gone
     expect(fs.existsSync(socketPath)).toBe(false);
@@ -421,8 +438,9 @@ base.describe('T-0300-09: socket cleanup on app quit', () => {
 
   base('SIGTERM removes socket file', async () => {
     const socketPath = testSocketPath();
+    const tmpDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'nap-0300-09b-'));
     const app = await electron.launch({
-      args: ELECTRON_LAUNCH_ARGS,
+      args: [...ELECTRON_LAUNCH_ARGS, '--cwd', tmpDir2],
       env: { ...process.env, NAP_SOCKET: socketPath, NAP_TEST: '1' },
     });
 
@@ -441,6 +459,7 @@ base.describe('T-0300-09: socket cleanup on app quit', () => {
 
     // Wait for process to exit
     await app.close();
+    fs.rmSync(tmpDir2, { recursive: true, force: true });
 
     // Give OS a moment to clean up
     await new Promise((r) => setTimeout(r, 500));
