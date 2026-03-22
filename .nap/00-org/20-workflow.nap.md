@@ -115,7 +115,7 @@ nap nap 001-test-arch-feature --timeout 300
 
 Blocks until agent signals completion. Then architect reads `response.md`.
 
-**Critical:** agents must call `nap done` when finished. They won't do it automatically — the prompt must tell them explicitly.
+**Critical:** agents must call `nap done` when finished — with NO message argument. Just `nap done`, not `nap done "some message"`. Done messages arrive in the architect's terminal as if the human typed them — the architect can't tell who sent it. Use `response.md` for all communication, `nap done` only as a signal.
 
 ## The prompt.md contract
 
@@ -130,7 +130,7 @@ If you handed this prompt to a stranger with access to the repo, they could do t
 **Every prompt must end with this, verbatim:**
 
 ```
-CRITICAL: when you are done, write your response to <path>/response.md, then run `nap done` in your terminal. The architect is blocked waiting — without this, the pipeline stalls.
+CRITICAL: when you are done, write your response to <path>/response.md, then run `nap done` in your terminal (no message argument — just `nap done`). The architect is blocked waiting — without this, the pipeline stalls.
 ```
 
 Last line of the prompt. Every time. Agents forget if it's buried in the middle.
@@ -142,7 +142,7 @@ Last line of the prompt. Every time. Agents forget if it's buried in the middle.
 - **`nap nap`:** architect waits for agent completion
 - **Questions:** agent writes to `questions.md`, calls `nap done` with a message. Architect reads, updates spec or answers, re-launches.
 
-**Do NOT use `nap poke` in agent workflows.** Poked messages arrive as if the human typed them — the receiving agent can't tell who sent it. Use files (response.md, questions.md) for structured communication and `nap done` for signaling. Poke is reserved for future collaboration patterns with proper sender identity.
+**Do NOT send messages through the terminal.** Both `nap poke` and `nap done "message"` deliver text to another agent's input as if the human typed it — the receiving agent can't tell who sent it. Use files (response.md, questions.md) for all communication. Use `nap done` (no arguments) purely as a completion signal. Message-based communication is reserved for future work with proper sender identity.
 
 ## Failure flow
 
