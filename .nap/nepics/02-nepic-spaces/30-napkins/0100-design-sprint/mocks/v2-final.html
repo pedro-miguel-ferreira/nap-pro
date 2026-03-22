@@ -1,0 +1,1719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NAP v2 — Final Stress Test (40 napkins, 2 architects, 20 agents)</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #1e1e1e;
+  --panel: #252526;
+  --panel-hover: #2a2d2e;
+  --border: #3c3c3c;
+  --text: #cccccc;
+  --text-dim: #6b7280;
+  --text-bright: #e5e5e5;
+  --text-file: #9cdcfe;
+  --active-bg: #37373d;
+  --active-border: #007acc;
+  --dot-run: #22c55e;
+  --dot-done: #3b82f6;
+  --dot-nap: #f59e0b;
+  --dot-exit: #6b7280;
+  --font: 'Menlo', 'Monaco', 'Consolas', monospace;
+  --fs: 13px;
+  --lh: 1.55;
+}
+
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: var(--fs); line-height: var(--lh);
+}
+#app { display: flex; height: 100%; }
+
+/* ── Gutter ── */
+#gutter {
+  width: 60px; min-width: 60px;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 0; gap: 4px;
+}
+.nepic {
+  width: 38px; height: 38px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+  color: var(--text-dim); position: relative; transition: all 0.15s;
+}
+.nepic:hover { background: var(--active-bg); color: var(--text); }
+.nepic.active { background: var(--active-bg); color: var(--text-bright); }
+.nepic.active::before {
+  content: ''; position: absolute;
+  left: -11px; top: 10px; bottom: 10px; width: 3px;
+  background: var(--text-bright); border-radius: 0 2px 2px 0;
+}
+.nepic.add { color: var(--text-dim); font-size: 20px; font-weight: 300; }
+.nepic.add:hover { color: var(--active-border); background: rgba(0,122,204,0.1); }
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 300px; min-width: 300px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#filter-bar { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+#filter-bar input {
+  width: 100%; background: var(--bg);
+  border: 1px solid var(--border); color: var(--text-dim);
+  font-family: var(--font); font-size: 12px;
+  padding: 5px 10px; border-radius: 4px; outline: none;
+}
+#filter-bar input:focus { border-color: var(--active-border); color: var(--text); }
+#card-list { flex: 1; overflow-y: auto; padding: 6px 0; scroll-behavior: smooth; }
+
+/* ── Cards ── */
+.card { padding: 0 12px; cursor: pointer; transition: background 0.15s; }
+.card:hover { background: var(--panel-hover); }
+.card.focused {
+  background: var(--active-bg);
+  border-left: 3px solid var(--active-border);
+  padding-left: 9px;
+}
+.card.focused:hover { background: var(--active-bg); }
+
+@keyframes card-flash {
+  0% { background: rgba(0,122,204,0.25); }
+  100% { background: var(--active-bg); }
+}
+.card.flash { animation: card-flash 1s ease-out; }
+
+.card-header {
+  display: flex; align-items: center;
+  padding: 3px 0; gap: 6px; user-select: none;
+}
+.card-header .bullet { color: var(--text-dim); flex-shrink: 0; }
+.card-header .name {
+  flex: 1; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; color: var(--text);
+}
+.card.focused .card-header .name { color: var(--text-bright); }
+.card-header .dots { display: flex; gap: 3px; flex-shrink: 0; margin: 0 2px; }
+.card-header .status-label { color: var(--text-dim); font-size: 12px; flex-shrink: 0; }
+
+.card-body { display: none; padding: 0 0 4px 0; }
+.card.focused .card-body { display: block; }
+
+.card-line {
+  padding: 1px 0 1px 16px;
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; border-radius: 3px;
+}
+.card-line:hover { background: rgba(255,255,255,0.04); }
+.card-line .line-bullet { color: var(--text-dim); flex-shrink: 0; width: 10px; text-align: center; font-size: 12px; }
+.card-line .line-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-line.artifact .line-text { color: var(--text-file); }
+.card-line.agent .line-text { color: var(--text); }
+.card-line.agent.active-agent { background: rgba(255,255,255,0.06); }
+.card-line .line-status { color: var(--text-dim); font-size: 12px; flex-shrink: 0; }
+.card-line .file-actions { display: none; gap: 8px; flex-shrink: 0; }
+.card-line:hover .file-actions { display: flex; }
+.file-action { color: var(--text-dim); font-size: 12px; cursor: pointer; padding: 0 2px; }
+.file-action:hover { color: var(--text-bright); }
+.card-line.virtual .line-text { color: var(--text-dim); font-style: italic; }
+.card-line.virtual:hover .line-text { color: var(--text); }
+.card-line.indent-2 { padding-left: 32px; }
+.card-separator { height: 1px; background: var(--border); margin: 6px 12px; }
+.dim-line { padding: 2px 0 2px 18px; color: var(--text-dim); font-size: 11px; cursor: default; }
+
+/* ── Dots ── */
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot.run { background: var(--dot-run); }
+.dot.done { background: var(--dot-done); }
+.dot.nap { background: transparent; border: 1.5px solid var(--dot-nap); width: 6px; height: 6px; }
+.dot.exit { background: transparent; border: 1.5px solid var(--dot-exit); width: 6px; height: 6px; }
+.dot-inline { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot-inline.run { background: var(--dot-run); }
+.dot-inline.done { background: var(--dot-done); }
+.dot-inline.nap { background: transparent; border: 1.5px solid var(--dot-nap); }
+.dot-inline.exit { background: transparent; border: 1.5px solid var(--dot-exit); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.dot.run, .dot-inline.run { animation: pulse 2s ease-in-out infinite; }
+
+/* ── Terminal ── */
+#terminal { flex: 1; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+#term-header {
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0;
+  background: var(--panel); flex-shrink: 0;
+}
+.bc-segment { color: var(--text-dim); cursor: pointer; padding: 2px 0; transition: color 0.1s; }
+.bc-segment:hover { color: var(--text-bright); }
+.bc-sep { color: var(--border); margin: 0 8px; cursor: default; }
+.bc-current { color: var(--text-bright); font-weight: 600; cursor: default; }
+.bc-dot { margin-right: 8px; }
+.bc-status { color: var(--text-dim); font-size: 12px; margin-left: 12px; }
+#term-content {
+  flex: 1; overflow-y: auto; padding: 12px 16px;
+  white-space: pre-wrap; word-wrap: break-word;
+  font-size: 13px; line-height: 1.5;
+}
+#term-input {
+  padding: 8px 16px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+#term-input .prompt-char { color: var(--text-dim); font-weight: 600; }
+#term-input .cursor { width: 7px; height: 15px; background: var(--text); animation: blink 1s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+#term-statusbar {
+  padding: 3px 16px; border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text-dim);
+  background: var(--panel); flex-shrink: 0;
+}
+.t-tool { color: var(--dot-run); }
+.t-res { color: var(--text-dim); }
+.t-cmd { color: #d4d4d4; }
+.t-ok { color: var(--dot-run); }
+.t-err { color: #f87171; }
+
+/* ── Kanban ── */
+#kanban {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 0; background: #1a1a2e;
+  border-bottom: 2px solid var(--active-border);
+  overflow: hidden; transition: height 0.25s ease;
+  z-index: 100; display: flex; flex-direction: column;
+}
+#kanban.open { height: 70vh; }
+#kanban-header {
+  padding: 12px 24px; border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+}
+#kanban-header h3 { font-size: 14px; font-weight: 600; color: var(--text-bright); }
+#kanban-header .hint { color: var(--text-dim); font-size: 12px; }
+#kanban-board {
+  display: flex; flex: 1; gap: 1px; background: var(--border);
+  overflow-x: auto; overflow-y: hidden; min-height: 0;
+}
+.kb-col { flex: 1; min-width: 180px; background: #1a1a2e; display: flex; flex-direction: column; min-height: 0; }
+.kb-col-head {
+  padding: 10px 14px; font-size: 11px; font-weight: 600;
+  color: var(--text-dim); text-transform: uppercase;
+  letter-spacing: 0.8px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.kb-col-body { padding: 8px; flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; }
+
+.kb-card {
+  background: var(--active-bg); border-radius: 5px;
+  border: 1px solid transparent; overflow: hidden; transition: border-color 0.15s;
+  flex-shrink: 0;
+}
+.kb-card:hover { border-color: var(--border); }
+.kb-card.expanded { border-color: var(--active-border); }
+.kb-card-header {
+  padding: 7px 10px; display: flex; align-items: center; gap: 6px; cursor: pointer;
+}
+.kb-card-header .kb-name {
+  flex: 1; font-size: 12px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.kb-card-header .kb-dots { display: flex; gap: 3px; flex-shrink: 0; }
+.kb-card-header .kb-nav {
+  color: var(--text-dim); font-size: 13px; cursor: pointer;
+  padding: 0 2px; flex-shrink: 0; transition: color 0.1s;
+}
+.kb-card-header .kb-nav:hover { color: var(--active-border); }
+.kb-card-body {
+  display: none; padding: 0 10px 8px 10px;
+  font-size: 12px; line-height: 1.5;
+}
+.kb-card.expanded .kb-card-body { display: block; }
+.kb-card-body .kb-sep { height: 1px; background: var(--border); margin: 5px 0; }
+.kb-bullet { color: var(--text); padding: 1px 0; }
+.kb-bullet .kb-b { color: var(--text-dim); }
+.kb-bullet.i1 { padding-left: 14px; }
+.kb-bullet.i2 { padding-left: 28px; }
+.kb-artifact-row { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.kb-artifact-badge {
+  font-size: 10px; color: var(--text-file);
+  background: rgba(156,220,254,0.08);
+  padding: 1px 5px; border-radius: 3px;
+}
+.kb-artifact-badge.empty { color: var(--text-dim); background: rgba(107,114,128,0.1); }
+.kb-agent-row { display: flex; gap: 8px; margin-top: 3px; flex-wrap: wrap; align-items: center; }
+.kb-agent-chip { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-dim); }
+
+/* ── Hints + Toast ── */
+#hints {
+  position: fixed; bottom: 8px; right: 16px;
+  font-size: 11px; color: var(--text-dim);
+  display: flex; gap: 16px; z-index: 50; pointer-events: none;
+}
+.hint-key {
+  background: var(--active-bg); padding: 1px 5px;
+  border-radius: 3px; font-size: 10px; border: 1px solid var(--border);
+}
+.toast {
+  position: fixed; bottom: 40px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--active-bg); color: var(--text-bright);
+  padding: 6px 16px; border-radius: 6px; font-size: 12px;
+  border: 1px solid var(--border); z-index: 200;
+  opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap;
+}
+.toast.show { opacity: 1; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+</style>
+</head>
+<body>
+<div id="app">
+
+<aside id="gutter">
+  <div class="nepic" onclick="showToast('switch to 01-poc')">P</div>
+  <div class="nepic active">S</div>
+  <div class="nepic add" onclick="showToast('+ new nepic with fresh architect')">+</div>
+</aside>
+
+<nav id="sidebar">
+  <div id="filter-bar"><input type="text" placeholder="&#x2318;K  filter napkins..." readonly></div>
+  <div id="card-list">
+
+    <!-- ═══ 002-nova (ARCHITECT, running) ═══ -->
+    <div class="card focused" data-card="002-nova">
+      <div class="card-header" onclick="toggleCard('002-nova')">
+        <span class="bullet">*</span><span class="name">002-nova</span>
+        <span class="dots"><span class="dot run"></span></span>
+        <span class="status-label" style="color:var(--dot-run)">acting</span>
+      </div>
+      <div class="card-body" id="body-002-nova">
+        <div class="focused-content">
+          <div class="card-line artifact" onclick="openFile('onboarding/')"><span class="line-bullet">*</span><span class="line-text">onboarding/</span></div>
+          <div class="card-line artifact" onclick="openFile('scratch/')"><span class="line-bullet">*</span><span class="line-text">scratch/</span></div>
+          <div class="card-line artifact" onclick="openFile('prompt.md')"><span class="line-bullet">*</span><span class="line-text">prompt.md</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action" onclick="copyPath(event,'prompt.md')">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">onboarding/</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">nova-handoff.md</span><span class="file-actions"><span class="file-action" onclick="copyPath(event,'onboarding/nova-handoff.md')">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">project-state.md</span><span class="file-actions"><span class="file-action" onclick="copyPath(event,'onboarding/project-state.md')">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">architecture.md</span><span class="file-actions"><span class="file-action" onclick="copyPath(event,'onboarding/architecture.md')">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">scratch/</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">sprint-plan.md</span><span class="file-actions"><span class="file-action" onclick="copyPath(event,'scratch/sprint-plan.md')">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">agent-assignments.md</span><span class="file-actions"><span class="file-action" onclick="copyPath(event,'scratch/agent-assignments.md')">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 001-architect (ARCHITECT, done) ═══ -->
+    <div class="card" data-card="001-architect">
+      <div class="card-header" onclick="toggleCard('001-architect')">
+        <span class="bullet">*</span><span class="name">001-architect</span>
+        <span class="dots"><span class="dot done"></span></span>
+        <span class="status-label" style="color:var(--dot-done)">done</span>
+      </div>
+      <div class="card-body" id="body-001-architect">
+        <div class="focused-content">
+          <div class="card-line artifact" onclick="openFile('onboarding/')"><span class="line-bullet">*</span><span class="line-text">onboarding/</span></div>
+          <div class="card-line artifact" onclick="openFile('scratch/')"><span class="line-bullet">*</span><span class="line-text">scratch/</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">onboarding/</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">01-vision.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">02-pipeline.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">scratch/</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">foundation-checklist.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-separator"></div>
+
+    <!-- ═══ DONE NAPKINS (0010–0080) ═══ -->
+
+    <div class="card" data-card="0010">
+      <div class="card-header" onclick="toggleCard('0010')">
+        <span class="bullet">*</span><span class="name">0010-project-bootstrap</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0010">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">scaffold.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0010-project-bootstrap.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">scaffold.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" data-card="0020">
+      <div class="card-header" onclick="toggleCard('0020')">
+        <span class="bullet">*</span><span class="name">0020-pty-terminal</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0020">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0020-pty-terminal.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0020-pty-terminal.spec.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" data-card="0030">
+      <div class="card-header" onclick="toggleCard('0030')">
+        <span class="bullet">*</span><span class="name">0030-socket-server</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0030">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">test.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0030-socket-server.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0030-socket-server.spec.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" data-card="0040">
+      <div class="card-header" onclick="toggleCard('0040')">
+        <span class="bullet">*</span><span class="name">0040-cli-commands</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0040">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0040-cli-commands.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" data-card="0050">
+      <div class="card-header" onclick="toggleCard('0050')">
+        <span class="bullet">*</span><span class="name">0050-basic-sidebar</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0050">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0050-basic-sidebar.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" data-card="0060">
+      <div class="card-header" onclick="toggleCard('0060')">
+        <span class="bullet">*</span><span class="name">0060-agent-lifecycle</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0060">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">test.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0060-agent-lifecycle.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" data-card="0070">
+      <div class="card-header" onclick="toggleCard('0070')">
+        <span class="bullet">*</span><span class="name">0070-napkin-parser</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0070">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0070-napkin-parser.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" data-card="0080">
+      <div class="card-header" onclick="toggleCard('0080')">
+        <span class="bullet">*</span><span class="name">0080-fs-watcher</span>
+        <span class="dots"><span class="dot exit"></span></span>
+        <span class="status-label" style="color:var(--dot-exit)">done</span>
+      </div>
+      <div class="card-body" id="body-0080">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="dim-line">1 agent exited</div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0080-fs-watcher.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="dim-line">001-fs-eng/ — exited</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ REVIEW NAPKINS ═══ -->
+
+    <!-- 0100-design-sprint (REVIEW) — 3 agents -->
+    <div class="card" data-card="0100">
+      <div class="card-header" onclick="toggleCard('0100')">
+        <span class="bullet">*</span><span class="name">0100-design-sprint</span>
+        <span class="dots"><span class="dot done"></span><span class="dot run"></span><span class="dot nap"></span></span>
+        <span class="status-label">review</span>
+      </div>
+      <div class="card-body" id="body-0100">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">test.md</span></div>
+          <div class="card-line agent" data-terminal="TA-100" onclick="switchTerminal('TA-100','0100-design-sprint')"><span class="dot-inline done"></span><span class="line-text">001-test-architect/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line agent" data-terminal="FS-100" onclick="switchTerminal('FS-100','0100-design-sprint')"><span class="dot-inline run"></span><span class="line-text">002-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line agent" data-terminal="TE-100" onclick="switchTerminal('TE-100','0100-design-sprint')"><span class="dot-inline nap"></span><span class="line-text">003-test-eng/</span><span class="line-status" style="color:var(--dot-nap)">nap</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0100-design-sprint.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0100-design-sprint.spec.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="TA-100" onclick="switchTerminal('TA-100','0100-design-sprint')"><span class="dot-inline done"></span><span class="line-text">001-test-architect/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('TA-100','0100-design-sprint')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">response.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-100" onclick="switchTerminal('FS-100','0100-design-sprint')"><span class="dot-inline run"></span><span class="line-text">002-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-100','0100-design-sprint')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="TE-100" onclick="switchTerminal('TE-100','0100-design-sprint')"><span class="dot-inline nap"></span><span class="line-text">003-test-eng/</span><span class="line-status" style="color:var(--dot-nap)">nap</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('TE-100','0100-design-sprint')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0110-session-continuity (REVIEW) — 2 agents -->
+    <div class="card" data-card="0110">
+      <div class="card-header" onclick="toggleCard('0110')">
+        <span class="bullet">*</span><span class="name">0110-session-continuity</span>
+        <span class="dots"><span class="dot done"></span><span class="dot done"></span></span>
+        <span class="status-label">review</span>
+      </div>
+      <div class="card-body" id="body-0110">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">test.md</span></div>
+          <div class="card-line agent" data-terminal="FS-110" onclick="switchTerminal('FS-110','0110-session-continuity')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line agent" data-terminal="TE-110" onclick="switchTerminal('TE-110','0110-session-continuity')"><span class="dot-inline done"></span><span class="line-text">002-test-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0110-session-continuity.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-110" onclick="switchTerminal('FS-110','0110-session-continuity')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-110','0110-session-continuity')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">response.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="TE-110" onclick="switchTerminal('TE-110','0110-session-continuity')"><span class="dot-inline done"></span><span class="line-text">002-test-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('TE-110','0110-session-continuity')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">response.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0120-scroll-lock (REVIEW) — 1 agent -->
+    <div class="card" data-card="0120">
+      <div class="card-header" onclick="toggleCard('0120')">
+        <span class="bullet">*</span><span class="name">0120-scroll-lock</span>
+        <span class="dots"><span class="dot done"></span></span>
+        <span class="status-label">review</span>
+      </div>
+      <div class="card-body" id="body-0120">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line agent" data-terminal="FS-120" onclick="switchTerminal('FS-120','0120-scroll-lock')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0120-scroll-lock.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-120" onclick="switchTerminal('FS-120','0120-scroll-lock')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-120','0120-scroll-lock')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">response.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0130-git-integration (REVIEW) — 1 agent -->
+    <div class="card" data-card="0130">
+      <div class="card-header" onclick="toggleCard('0130')">
+        <span class="bullet">*</span><span class="name">0130-git-integration</span>
+        <span class="dots"><span class="dot done"></span></span>
+        <span class="status-label">review</span>
+      </div>
+      <div class="card-body" id="body-0130">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line agent" data-terminal="FS-130" onclick="switchTerminal('FS-130','0130-git-integration')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0130-git-integration.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-130" onclick="switchTerminal('FS-130','0130-git-integration')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-130','0130-git-integration')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line virtual indent-2"><span class="line-bullet"></span><span class="line-text">[diff]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">response.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0140-token-counter (REVIEW) — 1 agent -->
+    <div class="card" data-card="0140">
+      <div class="card-header" onclick="toggleCard('0140')">
+        <span class="bullet">*</span><span class="name">0140-token-counter</span>
+        <span class="dots"><span class="dot done"></span></span>
+        <span class="status-label">review</span>
+      </div>
+      <div class="card-body" id="body-0140">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line agent" data-terminal="FS-140" onclick="switchTerminal('FS-140','0140-token-counter')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0140-token-counter.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-140" onclick="switchTerminal('FS-140','0140-token-counter')"><span class="dot-inline done"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-140','0140-token-counter')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">response.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ DOING NAPKINS ═══ -->
+
+    <!-- 0200-sqlite-persistence (DOING) — 2 agents -->
+    <div class="card" data-card="0200">
+      <div class="card-header" onclick="toggleCard('0200')">
+        <span class="bullet">*</span><span class="name">0200-sqlite-persistence</span>
+        <span class="dots"><span class="dot run"></span><span class="dot run"></span></span>
+        <span class="status-label">doing</span>
+      </div>
+      <div class="card-body" id="body-0200">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line agent" data-terminal="FS-200" onclick="switchTerminal('FS-200','0200-sqlite-persistence')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line agent" data-terminal="TE-200" onclick="switchTerminal('TE-200','0200-sqlite-persistence')"><span class="dot-inline run"></span><span class="line-text">002-test-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0200-sqlite-persistence.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-200" onclick="switchTerminal('FS-200','0200-sqlite-persistence')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-200','0200-sqlite-persistence')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="TE-200" onclick="switchTerminal('TE-200','0200-sqlite-persistence')"><span class="dot-inline run"></span><span class="line-text">002-test-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('TE-200','0200-sqlite-persistence')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0210-napkin-browser (DOING) — 2 agents -->
+    <div class="card" data-card="0210">
+      <div class="card-header" onclick="toggleCard('0210')">
+        <span class="bullet">*</span><span class="name">0210-napkin-browser</span>
+        <span class="dots"><span class="dot done"></span><span class="dot run"></span></span>
+        <span class="status-label">doing</span>
+      </div>
+      <div class="card-body" id="body-0210">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">test.md</span></div>
+          <div class="card-line agent" data-terminal="TA-210" onclick="switchTerminal('TA-210','0210-napkin-browser')"><span class="dot-inline done"></span><span class="line-text">001-test-architect/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line agent" data-terminal="FS-210" onclick="switchTerminal('FS-210','0210-napkin-browser')"><span class="dot-inline run"></span><span class="line-text">002-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0210-napkin-browser.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="TA-210" onclick="switchTerminal('TA-210','0210-napkin-browser')"><span class="dot-inline done"></span><span class="line-text">001-test-architect/</span><span class="line-status" style="color:var(--dot-done)">done</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('TA-210','0210-napkin-browser')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">response.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-210" onclick="switchTerminal('FS-210','0210-napkin-browser')"><span class="dot-inline run"></span><span class="line-text">002-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-210','0210-napkin-browser')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line virtual indent-2"><span class="line-bullet"></span><span class="line-text">[diff]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0220-kanban-overlay (DOING) — 1 agent -->
+    <div class="card" data-card="0220">
+      <div class="card-header" onclick="toggleCard('0220')">
+        <span class="bullet">*</span><span class="name">0220-kanban-overlay</span>
+        <span class="dots"><span class="dot run"></span></span>
+        <span class="status-label">doing</span>
+      </div>
+      <div class="card-body" id="body-0220">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line agent" data-terminal="FS-220" onclick="switchTerminal('FS-220','0220-kanban-overlay')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0220-kanban-overlay.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-220" onclick="switchTerminal('FS-220','0220-kanban-overlay')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-220','0220-kanban-overlay')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0230-agent-comms-v2 (DOING) — 2 agents -->
+    <div class="card" data-card="0230">
+      <div class="card-header" onclick="toggleCard('0230')">
+        <span class="bullet">*</span><span class="name">0230-agent-comms-v2</span>
+        <span class="dots"><span class="dot run"></span><span class="dot nap"></span></span>
+        <span class="status-label">doing</span>
+      </div>
+      <div class="card-body" id="body-0230">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line agent" data-terminal="FS-230" onclick="switchTerminal('FS-230','0230-agent-comms-v2')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line agent" data-terminal="TE-230" onclick="switchTerminal('TE-230','0230-agent-comms-v2')"><span class="dot-inline nap"></span><span class="line-text">002-test-eng/</span><span class="line-status" style="color:var(--dot-nap)">nap</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0230-agent-comms-v2.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-230" onclick="switchTerminal('FS-230','0230-agent-comms-v2')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-230','0230-agent-comms-v2')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="TE-230" onclick="switchTerminal('TE-230','0230-agent-comms-v2')"><span class="dot-inline nap"></span><span class="line-text">002-test-eng/</span><span class="line-status" style="color:var(--dot-nap)">nap</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('TE-230','0230-agent-comms-v2')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0240-breadcrumb-nav (DOING) — 1 agent -->
+    <div class="card" data-card="0240">
+      <div class="card-header" onclick="toggleCard('0240')">
+        <span class="bullet">*</span><span class="name">0240-breadcrumb-nav</span>
+        <span class="dots"><span class="dot run"></span></span>
+        <span class="status-label">doing</span>
+      </div>
+      <div class="card-body" id="body-0240">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line agent" data-terminal="FS-240" onclick="switchTerminal('FS-240','0240-breadcrumb-nav')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0240-breadcrumb-nav.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-240" onclick="switchTerminal('FS-240','0240-breadcrumb-nav')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-240','0240-breadcrumb-nav')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0250-hot-reload (DOING) — 1 agent -->
+    <div class="card" data-card="0250">
+      <div class="card-header" onclick="toggleCard('0250')">
+        <span class="bullet">*</span><span class="name">0250-hot-reload</span>
+        <span class="dots"><span class="dot run"></span></span>
+        <span class="status-label">doing</span>
+      </div>
+      <div class="card-body" id="body-0250">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">spec.md</span></div>
+          <div class="card-line agent" data-terminal="FS-250" onclick="switchTerminal('FS-250','0250-hot-reload')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0250-hot-reload.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-250" onclick="switchTerminal('FS-250','0250-hot-reload')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-250','0250-hot-reload')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0260-error-boundary (DOING) — 1 agent -->
+    <div class="card" data-card="0260">
+      <div class="card-header" onclick="toggleCard('0260')">
+        <span class="bullet">*</span><span class="name">0260-error-boundary</span>
+        <span class="dots"><span class="dot run"></span></span>
+        <span class="status-label">doing</span>
+      </div>
+      <div class="card-body" id="body-0260">
+        <div class="focused-content">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div>
+          <div class="card-line agent" data-terminal="FS-260" onclick="switchTerminal('FS-260','0260-error-boundary')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+        </div>
+        <div class="extended-content" style="display:none">
+          <div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0260-error-boundary.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+          <div class="card-line agent" data-terminal="FS-260" onclick="switchTerminal('FS-260','0260-error-boundary')"><span class="dot-inline run"></span><span class="line-text">001-fs-eng/</span><span class="line-status" style="color:var(--dot-run)">run</span></div>
+          <div class="card-line virtual indent-2" onclick="switchTerminal('FS-260','0260-error-boundary')"><span class="line-bullet"></span><span class="line-text">[terminal]</span></div>
+          <div class="card-line artifact indent-2"><span class="line-bullet">*</span><span class="line-text">prompt.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TODO NAPKINS (0300–0390) ═══ -->
+
+    <div class="card" data-card="0300"><div class="card-header" onclick="toggleCard('0300')"><span class="bullet">*</span><span class="name">0300-history-renderer</span><span class="status-label">todo</span></div><div class="card-body" id="body-0300"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0300-history-renderer.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0310"><div class="card-header" onclick="toggleCard('0310')"><span class="bullet">*</span><span class="name">0310-cmd-k-filter</span><span class="status-label">todo</span></div><div class="card-body" id="body-0310"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0310-cmd-k-filter.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0320"><div class="card-header" onclick="toggleCard('0320')"><span class="bullet">*</span><span class="name">0320-plugin-system</span><span class="status-label">todo</span></div><div class="card-body" id="body-0320"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0320-plugin-system.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0330"><div class="card-header" onclick="toggleCard('0330')"><span class="bullet">*</span><span class="name">0330-nepic-switcher</span><span class="status-label">todo</span></div><div class="card-body" id="body-0330"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0330-nepic-switcher.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0340"><div class="card-header" onclick="toggleCard('0340')"><span class="bullet">*</span><span class="name">0340-agent-diff-view</span><span class="status-label">todo</span></div><div class="card-body" id="body-0340"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0340-agent-diff-view.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0350"><div class="card-header" onclick="toggleCard('0350')"><span class="bullet">*</span><span class="name">0350-keyboard-shortcuts</span><span class="status-label">todo</span></div><div class="card-body" id="body-0350"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0350-keyboard-shortcuts.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0360"><div class="card-header" onclick="toggleCard('0360')"><span class="bullet">*</span><span class="name">0360-status-bar</span><span class="status-label">todo</span></div><div class="card-body" id="body-0360"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0360-status-bar.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0370"><div class="card-header" onclick="toggleCard('0370')"><span class="bullet">*</span><span class="name">0370-inline-annotations</span><span class="status-label">todo</span></div><div class="card-body" id="body-0370"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0370-inline-annotations.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0380"><div class="card-header" onclick="toggleCard('0380')"><span class="bullet">*</span><span class="name">0380-snapshot-restore</span><span class="status-label">todo</span></div><div class="card-body" id="body-0380"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0380-snapshot-restore.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <div class="card" data-card="0390"><div class="card-header" onclick="toggleCard('0390')"><span class="bullet">*</span><span class="name">0390-log-streaming</span><span class="status-label">todo</span></div><div class="card-body" id="body-0390"><div class="focused-content"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">nap.md</span></div><div class="dim-line">no agents yet</div></div><div class="extended-content" style="display:none"><div class="card-line artifact"><span class="line-bullet">*</span><span class="line-text">0390-log-streaming.nap.md</span><span class="file-actions"><span class="file-action">&#x2398;</span><span class="file-action">&#x2197;</span></span></div></div></div></div>
+
+    <!-- ═══ BACKLOG NAPKINS (0400–0490) ═══ -->
+
+    <div class="card" data-card="0400"><div class="card-header" onclick="toggleCard('0400')"><span class="bullet">*</span><span class="name">0400-multi-workspace</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0400"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0410"><div class="card-header" onclick="toggleCard('0410')"><span class="bullet">*</span><span class="name">0410-cloud-sync</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0410"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0420"><div class="card-header" onclick="toggleCard('0420')"><span class="bullet">*</span><span class="name">0420-onboarding-flow</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0420"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0430"><div class="card-header" onclick="toggleCard('0430')"><span class="bullet">*</span><span class="name">0430-theme-customization</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0430"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0440"><div class="card-header" onclick="toggleCard('0440')"><span class="bullet">*</span><span class="name">0440-split-terminal</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0440"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0450"><div class="card-header" onclick="toggleCard('0450')"><span class="bullet">*</span><span class="name">0450-agent-templates</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0450"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0460"><div class="card-header" onclick="toggleCard('0460')"><span class="bullet">*</span><span class="name">0460-napkin-versioning</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0460"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0470"><div class="card-header" onclick="toggleCard('0470')"><span class="bullet">*</span><span class="name">0470-review-gates</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0470"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0480"><div class="card-header" onclick="toggleCard('0480')"><span class="bullet">*</span><span class="name">0480-perf-monitoring</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0480"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+    <div class="card" data-card="0490"><div class="card-header" onclick="toggleCard('0490')"><span class="bullet">*</span><span class="name">0490-mobile-companion</span><span class="status-label" style="color:var(--text-dim)">backlog</span></div><div class="card-body" id="body-0490"><div class="focused-content"><div class="dim-line">empty &mdash; napkin not started</div></div><div class="extended-content" style="display:none"><div class="dim-line">empty directory</div></div></div></div>
+
+  </div>
+</nav>
+
+<main id="terminal">
+  <div id="term-header">
+    <span class="bc-dot"><span class="dot run" id="term-dot"></span></span>
+    <span class="bc-segment" onclick="navBreadcrumb('nepic')">S</span>
+    <span class="bc-sep">&rsaquo;</span>
+    <span class="bc-segment" id="bc-napkin" onclick="navBreadcrumb('napkin')" style="display:none"></span>
+    <span class="bc-sep" id="bc-sep2" style="display:none">&rsaquo;</span>
+    <span class="bc-current" id="term-name">002-nova</span>
+    <span class="bc-status" id="term-status">running</span>
+  </div>
+  <div id="term-content"></div>
+  <div id="term-input"><span class="prompt-char">&#x276F;</span><span class="cursor"></span></div>
+  <div id="term-statusbar">
+    <span>shift+tab to cycle &middot; esc to interrupt</span>
+    <span>&#x25CF; high &middot; /effort &nbsp; 1,247,831 tokens</span>
+  </div>
+</main>
+
+</div>
+
+<!-- ── Kanban ── -->
+<div id="kanban">
+  <div id="kanban-header">
+    <h3>project board</h3>
+    <span class="hint">click card to expand &middot; &#x2192; to navigate &middot; &#x2318;` to close</span>
+  </div>
+  <div id="kanban-board">
+
+    <!-- BACKLOG (10) -->
+    <div class="kb-col">
+      <div class="kb-col-head">backlog <span style="opacity:0.5">(10)</span></div>
+      <div class="kb-col-body">
+
+        <div class="kb-card" data-kb="0400"><div class="kb-card-header" onclick="toggleKbCard('0400')"><span class="kb-name">0400-multi-workspace</span><span class="kb-nav" onclick="kanbanNav(event,'0400')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>multiple projects open simultaneously</div><div class="kb-bullet i1"><span class="kb-b">* </span>shared agent pool across workspaces</div><div class="kb-bullet i1"><span class="kb-b">* </span>per-workspace nepic isolation</div><div class="kb-bullet"><span class="kb-b">* </span>workspace switcher in gutter</div><div class="kb-bullet i1"><span class="kb-b">* </span>drag to reorder, pin favorites</div></div></div>
+
+        <div class="kb-card" data-kb="0410"><div class="kb-card-header" onclick="toggleKbCard('0410')"><span class="kb-name">0410-cloud-sync</span><span class="kb-nav" onclick="kanbanNav(event,'0410')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>sync napkins + agent state across machines</div><div class="kb-bullet i1"><span class="kb-b">* </span>conflict resolution: last-write-wins + manual merge</div><div class="kb-bullet i1"><span class="kb-b">* </span>selective sync &mdash; some napkins local-only</div><div class="kb-bullet"><span class="kb-b">* </span>encrypted at rest, E2E in transit</div></div></div>
+
+        <div class="kb-card" data-kb="0420"><div class="kb-card-header" onclick="toggleKbCard('0420')"><span class="kb-name">0420-onboarding-flow</span><span class="kb-nav" onclick="kanbanNav(event,'0420')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>first-run wizard</div><div class="kb-bullet i1"><span class="kb-b">* </span>guided napkin creation from template</div><div class="kb-bullet i1"><span class="kb-b">* </span>sample project: &ldquo;hello-nap&rdquo; with 3 napkins</div><div class="kb-bullet"><span class="kb-b">* </span>contextual hints (dismissable)</div></div></div>
+
+        <div class="kb-card" data-kb="0430"><div class="kb-card-header" onclick="toggleKbCard('0430')"><span class="kb-name">0430-theme-customization</span><span class="kb-nav" onclick="kanbanNav(event,'0430')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>JSON theme files in .nap/themes/</div><div class="kb-bullet i1"><span class="kb-b">* </span>extend base theme, override tokens</div><div class="kb-bullet"><span class="kb-b">* </span>light mode (finally)</div><div class="kb-bullet i1"><span class="kb-b">* </span>high-contrast variant for a11y</div></div></div>
+
+        <div class="kb-card" data-kb="0440"><div class="kb-card-header" onclick="toggleKbCard('0440')"><span class="kb-name">0440-split-terminal</span><span class="kb-nav" onclick="kanbanNav(event,'0440')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>horizontal + vertical splits</div><div class="kb-bullet i1"><span class="kb-b">* </span>side-by-side agent comparison</div><div class="kb-bullet"><span class="kb-b">* </span>linked scroll mode</div><div class="kb-bullet i1"><span class="kb-b">* </span>two agents, same codebase, synchronized</div></div></div>
+
+        <div class="kb-card" data-kb="0450"><div class="kb-card-header" onclick="toggleKbCard('0450')"><span class="kb-name">0450-agent-templates</span><span class="kb-nav" onclick="kanbanNav(event,'0450')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>role = prompt + constraints + model</div><div class="kb-bullet i1"><span class="kb-b">* </span>fs-eng, test-eng, architect as built-ins</div><div class="kb-bullet i1"><span class="kb-b">* </span>custom roles in .nap/roles/</div><div class="kb-bullet"><span class="kb-b">* </span>template inheritance: extend base roles</div></div></div>
+
+        <div class="kb-card" data-kb="0460"><div class="kb-card-header" onclick="toggleKbCard('0460')"><span class="kb-name">0460-napkin-versioning</span><span class="kb-nav" onclick="kanbanNav(event,'0460')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>git-backed napkin history</div><div class="kb-bullet i1"><span class="kb-b">* </span>diff between versions</div><div class="kb-bullet i1"><span class="kb-b">* </span>rollback to any prior state</div><div class="kb-bullet"><span class="kb-b">* </span>auto-snapshot before agent writes</div></div></div>
+
+        <div class="kb-card" data-kb="0470"><div class="kb-card-header" onclick="toggleKbCard('0470')"><span class="kb-name">0470-review-gates</span><span class="kb-nav" onclick="kanbanNav(event,'0470')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>configurable approval flow</div><div class="kb-bullet i1"><span class="kb-b">* </span>require human sign-off before DONE</div><div class="kb-bullet i1"><span class="kb-b">* </span>auto-approve if all tests pass</div><div class="kb-bullet"><span class="kb-b">* </span>review checklist from napkin spec</div></div></div>
+
+        <div class="kb-card" data-kb="0480"><div class="kb-card-header" onclick="toggleKbCard('0480')"><span class="kb-name">0480-perf-monitoring</span><span class="kb-nav" onclick="kanbanNav(event,'0480')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>token usage per agent, per napkin</div><div class="kb-bullet i1"><span class="kb-b">* </span>cost estimation (model &times; tokens)</div><div class="kb-bullet"><span class="kb-b">* </span>wall-clock time tracking</div><div class="kb-bullet i1"><span class="kb-b">* </span>agent efficiency: tokens per useful line</div></div></div>
+
+        <div class="kb-card" data-kb="0490"><div class="kb-card-header" onclick="toggleKbCard('0490')"><span class="kb-name">0490-mobile-companion</span><span class="kb-nav" onclick="kanbanNav(event,'0490')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>read-only project view on phone</div><div class="kb-bullet i1"><span class="kb-b">* </span>push notifications for completions</div><div class="kb-bullet"><span class="kb-b">* </span>quick approve/reject from mobile</div><div class="kb-bullet i1"><span class="kb-b">* </span>swipe to advance kanban state</div></div></div>
+
+      </div>
+    </div>
+
+    <!-- TODO (10) -->
+    <div class="kb-col">
+      <div class="kb-col-head">todo <span style="opacity:0.5">(10)</span></div>
+      <div class="kb-col-body">
+
+        <div class="kb-card" data-kb="0300"><div class="kb-card-header" onclick="toggleKbCard('0300')"><span class="kb-name">0300-history-renderer</span><span class="kb-nav" onclick="kanbanNav(event,'0300')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>full conversation replay from JSONL</div><div class="kb-bullet i1"><span class="kb-b">* </span>tool calls as collapsible blocks</div><div class="kb-bullet i1"><span class="kb-b">* </span>thinking tokens in gray italic</div><div class="kb-bullet"><span class="kb-b">* </span>search across all agent conversations</div><div class="kb-bullet i1"><span class="kb-b">* </span>regex + filter by tool type</div><div class="kb-bullet"><span class="kb-b">* </span>timeline scrubber: jump to any exchange</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0310"><div class="kb-card-header" onclick="toggleKbCard('0310')"><span class="kb-name">0310-cmd-k-filter</span><span class="kb-nav" onclick="kanbanNav(event,'0310')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>fuzzy match napkins + agents + files</div><div class="kb-bullet i1"><span class="kb-b">* </span>ranked by recency &times; relevance</div><div class="kb-bullet"><span class="kb-b">* </span>keyboard-driven: j/k navigate, enter selects</div><div class="kb-bullet i1"><span class="kb-b">* </span>esc clears, type to narrow</div><div class="kb-bullet"><span class="kb-b">* </span>scope modifiers: @agent, #napkin, :status</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0320"><div class="kb-card-header" onclick="toggleKbCard('0320')"><span class="kb-name">0320-plugin-system</span><span class="kb-nav" onclick="kanbanNav(event,'0320')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>custom agent roles via config</div><div class="kb-bullet i1"><span class="kb-b">* </span>role = prompt template + constraints</div><div class="kb-bullet i1"><span class="kb-b">* </span>share roles across projects</div><div class="kb-bullet"><span class="kb-b">* </span>hook system: before-agent, after-agent</div><div class="kb-bullet i1"><span class="kb-b">* </span>linting, formatting, custom validation</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0330"><div class="kb-card-header" onclick="toggleKbCard('0330')"><span class="kb-name">0330-nepic-switcher</span><span class="kb-nav" onclick="kanbanNav(event,'0330')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>gutter icons for nepics</div><div class="kb-bullet i1"><span class="kb-b">* </span>+ creates new era, fresh architect</div><div class="kb-bullet"><span class="kb-b">* </span>architect succession flow</div><div class="kb-bullet i1"><span class="kb-b">* </span>handoff doc auto-generated</div><div class="kb-bullet i1"><span class="kb-b">* </span>previous architect scratch/ preserved</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0340"><div class="kb-card-header" onclick="toggleKbCard('0340')"><span class="kb-name">0340-agent-diff-view</span><span class="kb-nav" onclick="kanbanNav(event,'0340')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>scoped git diff per agent session</div><div class="kb-bullet i1"><span class="kb-b">* </span>only files touched during session</div><div class="kb-bullet"><span class="kb-b">* </span>[diff] virtual entry in extended view</div><div class="kb-bullet i1"><span class="kb-b">* </span>inline diff viewer, not external</div><div class="kb-bullet"><span class="kb-b">* </span>stat summary: +lines, -lines, files</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0350"><div class="kb-card-header" onclick="toggleKbCard('0350')"><span class="kb-name">0350-keyboard-shortcuts</span><span class="kb-nav" onclick="kanbanNav(event,'0350')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>vim-style nav in sidebar</div><div class="kb-bullet i1"><span class="kb-b">* </span>j/k move, enter focus, esc collapse</div><div class="kb-bullet"><span class="kb-b">* </span>terminal: shift+tab cycle, ctrl+c interrupt</div><div class="kb-bullet"><span class="kb-b">* </span>customizable in .nap/keybindings.json</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0360"><div class="kb-card-header" onclick="toggleKbCard('0360')"><span class="kb-name">0360-status-bar</span><span class="kb-nav" onclick="kanbanNav(event,'0360')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>bottom bar with project vitals</div><div class="kb-bullet i1"><span class="kb-b">* </span>agent count by status: &#x25CF; 9 run, &#x25CB; 2 nap</div><div class="kb-bullet i1"><span class="kb-b">* </span>current nepic name + era</div><div class="kb-bullet"><span class="kb-b">* </span>token usage: session total + burn rate</div><div class="kb-bullet"><span class="kb-b">* </span>click segments to navigate</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0370"><div class="kb-card-header" onclick="toggleKbCard('0370')"><span class="kb-name">0370-inline-annotations</span><span class="kb-nav" onclick="kanbanNav(event,'0370')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>margin notes in terminal output</div><div class="kb-bullet i1"><span class="kb-b">* </span>human can annotate any line</div><div class="kb-bullet"><span class="kb-b">* </span>types: question, flag, approve</div><div class="kb-bullet i1"><span class="kb-b">* </span>color-coded: yellow / red / green</div><div class="kb-bullet"><span class="kb-b">* </span>persisted in .nap/annotations/</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0380"><div class="kb-card-header" onclick="toggleKbCard('0380')"><span class="kb-name">0380-snapshot-restore</span><span class="kb-nav" onclick="kanbanNav(event,'0380')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>checkpoint agent state at any point</div><div class="kb-bullet i1"><span class="kb-b">* </span>fs + db + terminal history</div><div class="kb-bullet"><span class="kb-b">* </span>rollback: restore to checkpoint</div><div class="kb-bullet i1"><span class="kb-b">* </span>diff between current and checkpoint</div><div class="kb-bullet"><span class="kb-b">* </span>auto-checkpoint before risky ops</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0390"><div class="kb-card-header" onclick="toggleKbCard('0390')"><span class="kb-name">0390-log-streaming</span><span class="kb-nav" onclick="kanbanNav(event,'0390')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>structured log viewer (not raw text)</div><div class="kb-bullet i1"><span class="kb-b">* </span>filter by level: debug/info/warn/error</div><div class="kb-bullet i1"><span class="kb-b">* </span>filter by source: agent/system/user</div><div class="kb-bullet"><span class="kb-b">* </span>live tail with pause/resume</div><div class="kb-bullet i1"><span class="kb-b">* </span>click to pin a log line</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge empty">spec</span></div></div></div>
+
+      </div>
+    </div>
+
+    <!-- DOING (7) — cards start expanded -->
+    <div class="kb-col">
+      <div class="kb-col-head">doing <span style="opacity:0.5">(7)</span></div>
+      <div class="kb-col-body">
+
+        <div class="kb-card expanded" data-kb="0200"><div class="kb-card-header" onclick="toggleKbCard('0200')"><span class="kb-name">0200-sqlite-persistence</span><span class="kb-dots"><span class="dot run"></span><span class="dot run"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0200')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>better-sqlite3 for state management</div><div class="kb-bullet i1"><span class="kb-b">* </span>fs = content truth, db = status truth</div><div class="kb-bullet i1"><span class="kb-b">* </span>WAL mode for concurrent reads</div><div class="kb-bullet"><span class="kb-b">* </span>survive app restart gracefully</div><div class="kb-bullet i1"><span class="kb-b">* </span>re-derive board state from fs + db</div><div class="kb-bullet"><span class="kb-b">* </span>board symlink sync on status change</div><div class="kb-bullet i1"><span class="kb-b">* </span>kanban columns are real directories</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span><span class="kb-artifact-badge empty">test</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot run"></span> FS</span><span class="kb-agent-chip"><span class="dot run"></span> TE</span></div></div></div>
+
+        <div class="kb-card expanded" data-kb="0210"><div class="kb-card-header" onclick="toggleKbCard('0210')"><span class="kb-name">0210-napkin-browser</span><span class="kb-dots"><span class="dot done"></span><span class="dot run"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0210')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>tree view organized by features</div><div class="kb-bullet i1"><span class="kb-b">* </span>napkins as expandable cards</div><div class="kb-bullet i1"><span class="kb-b">* </span>agents as clickable sub-entries</div><div class="kb-bullet"><span class="kb-b">* </span>card states: collapsed / focused / extended</div><div class="kb-bullet i1"><span class="kb-b">* </span>collapsed: one-line scan (name + dots)</div><div class="kb-bullet i1"><span class="kb-b">* </span>focused: bullets expand, artifacts clickable</div><div class="kb-bullet i1"><span class="kb-b">* </span>extended (&#x2318;E): full directory snapshot</div><div class="kb-bullet"><span class="kb-b">* </span>live updates via fs watcher</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span><span class="kb-artifact-badge">test</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot done"></span> TA</span><span class="kb-agent-chip"><span class="dot run"></span> FS</span></div></div></div>
+
+        <div class="kb-card expanded" data-kb="0220"><div class="kb-card-header" onclick="toggleKbCard('0220')"><span class="kb-name">0220-kanban-overlay</span><span class="kb-dots"><span class="dot run"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0220')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>quake console slides from top (&#x2318;`)</div><div class="kb-bullet i1"><span class="kb-b">* </span>full width, terminal stays underneath</div><div class="kb-bullet"><span class="kb-b">* </span>expand cards to see napkin bullets</div><div class="kb-bullet i1"><span class="kb-b">* </span>&rarr; navigates to sidebar + switches terminal</div><div class="kb-bullet"><span class="kb-b">* </span>column counts auto-update</div><div class="kb-bullet i1"><span class="kb-b">* </span>read-only for now; drag-reorder is future</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot run"></span> FS</span></div></div></div>
+
+        <div class="kb-card expanded" data-kb="0230"><div class="kb-card-header" onclick="toggleKbCard('0230')"><span class="kb-name">0230-agent-comms-v2</span><span class="kb-dots"><span class="dot run"></span><span class="dot nap"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0230')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>poke/nap/done protocol v2</div><div class="kb-bullet i1"><span class="kb-b">* </span>poke: wake sleeping agent with context</div><div class="kb-bullet i1"><span class="kb-b">* </span>nap: sleep until condition met</div><div class="kb-bullet i1"><span class="kb-b">* </span>done: exit with response.md handoff</div><div class="kb-bullet"><span class="kb-b">* </span>cross-agent file coordination</div><div class="kb-bullet i1"><span class="kb-b">* </span>lock files during writes</div><div class="kb-bullet i1"><span class="kb-b">* </span>notify watchers on release</div><div class="kb-bullet"><span class="kb-b">* </span>response.md as structured handoff</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot run"></span> FS</span><span class="kb-agent-chip"><span class="dot nap"></span> TE</span></div></div></div>
+
+        <div class="kb-card expanded" data-kb="0240"><div class="kb-card-header" onclick="toggleKbCard('0240')"><span class="kb-name">0240-breadcrumb-nav</span><span class="kb-dots"><span class="dot run"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0240')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>S &rsaquo; napkin-name &rsaquo; agent-id path</div><div class="kb-bullet i1"><span class="kb-b">* </span>click S &rarr; back to architect</div><div class="kb-bullet i1"><span class="kb-b">* </span>click napkin &rarr; focus that card</div><div class="kb-bullet"><span class="kb-b">* </span>status dot + label in header</div><div class="kb-bullet"><span class="kb-b">* </span>spatial context: where am I?</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot run"></span> FS</span></div></div></div>
+
+        <div class="kb-card expanded" data-kb="0250"><div class="kb-card-header" onclick="toggleKbCard('0250')"><span class="kb-name">0250-hot-reload</span><span class="kb-dots"><span class="dot run"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0250')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>HMR for renderer process</div><div class="kb-bullet i1"><span class="kb-b">* </span>React fast refresh for components</div><div class="kb-bullet i1"><span class="kb-b">* </span>CSS module hot swap</div><div class="kb-bullet"><span class="kb-b">* </span>main process: graceful restart</div><div class="kb-bullet i1"><span class="kb-b">* </span>preserve terminal connections across reload</div><div class="kb-bullet"><span class="kb-b">* </span>dev overlay with error boundary</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot run"></span> FS</span></div></div></div>
+
+        <div class="kb-card expanded" data-kb="0260"><div class="kb-card-header" onclick="toggleKbCard('0260')"><span class="kb-name">0260-error-boundary</span><span class="kb-dots"><span class="dot run"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0260')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>graceful crash recovery per panel</div><div class="kb-bullet i1"><span class="kb-b">* </span>sidebar crash doesn&rsquo;t kill terminal</div><div class="kb-bullet i1"><span class="kb-b">* </span>terminal crash doesn&rsquo;t kill sidebar</div><div class="kb-bullet"><span class="kb-b">* </span>error state: &ldquo;something broke&rdquo; + retry</div><div class="kb-bullet i1"><span class="kb-b">* </span>auto-report: stack trace + state snapshot</div><div class="kb-bullet"><span class="kb-b">* </span>process isolation via BrowserView</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot run"></span> FS</span></div></div></div>
+
+      </div>
+    </div>
+
+    <!-- REVIEW (5) -->
+    <div class="kb-col">
+      <div class="kb-col-head">review <span style="opacity:0.5">(5)</span></div>
+      <div class="kb-col-body">
+
+        <div class="kb-card" data-kb="0100"><div class="kb-card-header" onclick="toggleKbCard('0100')"><span class="kb-name">0100-design-sprint</span><span class="kb-dots"><span class="dot done"></span><span class="dot run"></span><span class="dot nap"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0100')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>three-column layout: gutter + sidebar + terminal</div><div class="kb-bullet i1"><span class="kb-b">* </span>gutter 60px: nepic switcher, timeline of eras</div><div class="kb-bullet i1"><span class="kb-b">* </span>sidebar 300px: collaboration map</div><div class="kb-bullet i1"><span class="kb-b">* </span>terminal fills rest: primary workspace</div><div class="kb-bullet"><span class="kb-b">* </span>cards as napkin bullets, not components</div><div class="kb-bullet i1"><span class="kb-b">* </span>the napkin format IS the UI language</div><div class="kb-bullet"><span class="kb-b">* </span>kanban quake console (&#x2318;`)</div><div class="kb-bullet i1"><span class="kb-b">* </span>slides down, full width overlay</div><div class="kb-bullet"><span class="kb-b">* </span>breadcrumb nav: S &rsaquo; napkin &rsaquo; agent</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span><span class="kb-artifact-badge">test</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot done"></span> TA</span><span class="kb-agent-chip"><span class="dot run"></span> FS</span><span class="kb-agent-chip"><span class="dot nap"></span> TE</span></div></div></div>
+
+        <div class="kb-card" data-kb="0110"><div class="kb-card-header" onclick="toggleKbCard('0110')"><span class="kb-name">0110-session-continuity</span><span class="kb-dots"><span class="dot done"></span><span class="dot done"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0110')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>architect resume after restart</div><div class="kb-bullet i1"><span class="kb-b">* </span>serialize conversation to JSONL</div><div class="kb-bullet i1"><span class="kb-b">* </span>re-hydrate context on launch</div><div class="kb-bullet"><span class="kb-b">* </span>agent session recovery</div><div class="kb-bullet i1"><span class="kb-b">* </span>re-attach to running ptys</div><div class="kb-bullet i1"><span class="kb-b">* </span>detect orphaned processes</div><div class="kb-bullet"><span class="kb-b">* </span>graceful degradation: partial recovery OK</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span><span class="kb-artifact-badge">test</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot done"></span> FS</span><span class="kb-agent-chip"><span class="dot done"></span> TE</span></div></div></div>
+
+        <div class="kb-card" data-kb="0120"><div class="kb-card-header" onclick="toggleKbCard('0120')"><span class="kb-name">0120-scroll-lock</span><span class="kb-dots"><span class="dot done"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0120')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>follow mode vs read mode</div><div class="kb-bullet i1"><span class="kb-b">* </span>follow: auto-scroll, dim blue border</div><div class="kb-bullet i1"><span class="kb-b">* </span>read: locked position, amber border</div><div class="kb-bullet"><span class="kb-b">* </span>auto-switch on user scroll</div><div class="kb-bullet i1"><span class="kb-b">* </span>scroll up &rarr; read mode</div><div class="kb-bullet i1"><span class="kb-b">* </span>new output + at bottom &rarr; follow mode</div><div class="kb-bullet"><span class="kb-b">* </span>mode indicator in terminal chrome</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot done"></span> FS</span></div></div></div>
+
+        <div class="kb-card" data-kb="0130"><div class="kb-card-header" onclick="toggleKbCard('0130')"><span class="kb-name">0130-git-integration</span><span class="kb-dots"><span class="dot done"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0130')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>scoped diffs per agent session</div><div class="kb-bullet i1"><span class="kb-b">* </span>track files touched during session</div><div class="kb-bullet i1"><span class="kb-b">* </span>git diff --stat in agent card</div><div class="kb-bullet"><span class="kb-b">* </span>auto-commit on agent done</div><div class="kb-bullet i1"><span class="kb-b">* </span>message: &ldquo;agent-id: napkin summary&rdquo;</div><div class="kb-bullet"><span class="kb-b">* </span>[diff] entry in extended view</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot done"></span> FS</span></div></div></div>
+
+        <div class="kb-card" data-kb="0140"><div class="kb-card-header" onclick="toggleKbCard('0140')"><span class="kb-name">0140-token-counter</span><span class="kb-dots"><span class="dot done"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0140')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>live token usage in status bar</div><div class="kb-bullet i1"><span class="kb-b">* </span>input tokens, output tokens, cache hits</div><div class="kb-bullet"><span class="kb-b">* </span>per-agent breakdown</div><div class="kb-bullet i1"><span class="kb-b">* </span>cost estimation by model</div><div class="kb-bullet"><span class="kb-b">* </span>session budget: warn 80%, pause 100%</div><div class="kb-bullet i1"><span class="kb-b">* </span>configurable per-napkin limits</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div><div class="kb-agent-row"><span class="kb-agent-chip"><span class="dot done"></span> FS</span></div></div></div>
+
+      </div>
+    </div>
+
+    <!-- DONE (8) -->
+    <div class="kb-col">
+      <div class="kb-col-head">done <span style="opacity:0.5">(8)</span></div>
+      <div class="kb-col-body">
+
+        <div class="kb-card" data-kb="0010"><div class="kb-card-header" onclick="toggleKbCard('0010')"><span class="kb-name">0010-project-bootstrap</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0010')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>electron + vite + react scaffold</div><div class="kb-bullet i1"><span class="kb-b">* </span>monorepo: main/ renderer/ shared/</div><div class="kb-bullet i1"><span class="kb-b">* </span>dev: vite HMR + electron-reload</div><div class="kb-bullet"><span class="kb-b">* </span>typescript strict mode everywhere</div><div class="kb-bullet"><span class="kb-b">* </span>eslint + prettier + husky pre-commit</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">scaffold</span></div></div></div>
+
+        <div class="kb-card" data-kb="0020"><div class="kb-card-header" onclick="toggleKbCard('0020')"><span class="kb-name">0020-pty-terminal</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0020')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>xterm.js + node-pty integration</div><div class="kb-bullet i1"><span class="kb-b">* </span>resize: debounced, synced to pty</div><div class="kb-bullet i1"><span class="kb-b">* </span>scrollback: 10k lines, configurable</div><div class="kb-bullet"><span class="kb-b">* </span>ANSI color support (full 256)</div><div class="kb-bullet"><span class="kb-b">* </span>copy/paste with selection detection</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0030"><div class="kb-card-header" onclick="toggleKbCard('0030')"><span class="kb-name">0030-socket-server</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0030')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>unix socket IPC over ndjson</div><div class="kb-bullet i1"><span class="kb-b">* </span>stale socket detection + cleanup</div><div class="kb-bullet i1"><span class="kb-b">* </span>multi-instance guard: one server per project</div><div class="kb-bullet"><span class="kb-b">* </span>message types: command, event, query</div><div class="kb-bullet"><span class="kb-b">* </span>backpressure: queue when client slow</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span><span class="kb-artifact-badge">test</span></div></div></div>
+
+        <div class="kb-card" data-kb="0040"><div class="kb-card-header" onclick="toggleKbCard('0040')"><span class="kb-name">0040-cli-commands</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0040')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>nap start/ps/peek/kill/close</div><div class="kb-bullet i1"><span class="kb-b">* </span>NAP_SESSION_ID propagation to children</div><div class="kb-bullet i1"><span class="kb-b">* </span>fuzzy match: &ldquo;nap peek sql&rdquo; &rarr; 0200</div><div class="kb-bullet"><span class="kb-b">* </span>nap init: scaffold new project</div><div class="kb-bullet"><span class="kb-b">* </span>nap doctor: diagnose common issues</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0050"><div class="kb-card-header" onclick="toggleKbCard('0050')"><span class="kb-name">0050-basic-sidebar</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0050')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>flat terminal list with status dots</div><div class="kb-bullet i1"><span class="kb-b">* </span>click to switch, drag to reorder</div><div class="kb-bullet"><span class="kb-b">* </span>&#x25CF; running (green), &#x25CF; done (blue)</div><div class="kb-bullet"><span class="kb-b">* </span>&#x25CB; napping (amber), &#x25CB; exited (gray)</div><div class="kb-bullet"><span class="kb-b">* </span>running dots pulse subtly</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0060"><div class="kb-card-header" onclick="toggleKbCard('0060')"><span class="kb-name">0060-agent-lifecycle</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0060')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>spawn: fork pty + inject env</div><div class="kb-bullet i1"><span class="kb-b">* </span>NAP_AGENT_ID, NAP_NAPKIN, NAP_SESSION_ID</div><div class="kb-bullet"><span class="kb-b">* </span>monitor: heartbeat every 5s</div><div class="kb-bullet i1"><span class="kb-b">* </span>detect hung agents: no output 60s</div><div class="kb-bullet"><span class="kb-b">* </span>reap: cleanup on exit, preserve buffer</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span><span class="kb-artifact-badge">test</span></div></div></div>
+
+        <div class="kb-card" data-kb="0070"><div class="kb-card-header" onclick="toggleKbCard('0070')"><span class="kb-name">0070-napkin-parser</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0070')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>parse .nap.md &rarr; structured data</div><div class="kb-bullet i1"><span class="kb-b">* </span>bullets &rarr; tree, labels &rarr; metadata</div><div class="kb-bullet i1"><span class="kb-b">* </span>nested causation preserved</div><div class="kb-bullet"><span class="kb-b">* </span>validate against schema</div><div class="kb-bullet"><span class="kb-b">* </span>incremental re-parse on file change</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div></div></div>
+
+        <div class="kb-card" data-kb="0080"><div class="kb-card-header" onclick="toggleKbCard('0080')"><span class="kb-name">0080-fs-watcher</span><span class="kb-dots"><span class="dot exit"></span></span><span class="kb-nav" onclick="kanbanNav(event,'0080')">&rarr;</span></div><div class="kb-card-body"><div class="kb-bullet"><span class="kb-b">* </span>chokidar recursive watch on .nap/</div><div class="kb-bullet i1"><span class="kb-b">* </span>debounce: 100ms, aggregate events</div><div class="kb-bullet i1"><span class="kb-b">* </span>ignore: node_modules, .git, *.swp</div><div class="kb-bullet"><span class="kb-b">* </span>events: napkin-changed, agent-spawned</div><div class="kb-bullet"><span class="kb-b">* </span>feed events to IPC bus for renderer</div><div class="kb-sep"></div><div class="kb-artifact-row"><span class="kb-artifact-badge">nap</span><span class="kb-artifact-badge">spec</span></div></div></div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="hints">
+  <span><span class="hint-key">click</span> focus</span>
+  <span><span class="hint-key">&#x2318;E</span> extended</span>
+  <span><span class="hint-key">&#x2318;`</span> board</span>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const agentMeta = {
+  '002-nova': { status:'running', dotClass:'run', napkin:null },
+  '001-architect': { status:'done', dotClass:'done', napkin:null },
+  'TA-100': { status:'done', dotClass:'done', napkin:'0100-design-sprint' },
+  'FS-100': { status:'running', dotClass:'run', napkin:'0100-design-sprint' },
+  'TE-100': { status:'napping', dotClass:'nap', napkin:'0100-design-sprint' },
+  'FS-110': { status:'done', dotClass:'done', napkin:'0110-session-continuity' },
+  'TE-110': { status:'done', dotClass:'done', napkin:'0110-session-continuity' },
+  'FS-120': { status:'done', dotClass:'done', napkin:'0120-scroll-lock' },
+  'FS-130': { status:'done', dotClass:'done', napkin:'0130-git-integration' },
+  'FS-140': { status:'done', dotClass:'done', napkin:'0140-token-counter' },
+  'FS-200': { status:'running', dotClass:'run', napkin:'0200-sqlite-persistence' },
+  'TE-200': { status:'running', dotClass:'run', napkin:'0200-sqlite-persistence' },
+  'TA-210': { status:'done', dotClass:'done', napkin:'0210-napkin-browser' },
+  'FS-210': { status:'running', dotClass:'run', napkin:'0210-napkin-browser' },
+  'FS-220': { status:'running', dotClass:'run', napkin:'0220-kanban-overlay' },
+  'FS-230': { status:'running', dotClass:'run', napkin:'0230-agent-comms-v2' },
+  'TE-230': { status:'napping', dotClass:'nap', napkin:'0230-agent-comms-v2' },
+  'FS-240': { status:'running', dotClass:'run', napkin:'0240-breadcrumb-nav' },
+  'FS-250': { status:'running', dotClass:'run', napkin:'0250-hot-reload' },
+  'FS-260': { status:'running', dotClass:'run', napkin:'0260-error-boundary' }
+};
+
+const cardDefaultAgent = {
+  '002-nova':'002-nova', '001-architect':'001-architect',
+  '0100':'FS-100', '0110':'FS-110', '0120':'FS-120', '0130':'FS-130', '0140':'FS-140',
+  '0200':'FS-200', '0210':'FS-210', '0220':'FS-220', '0230':'FS-230', '0240':'FS-240',
+  '0250':'FS-250', '0260':'FS-260'
+};
+
+const napkinName = {
+  '0010':'0010-project-bootstrap', '0020':'0020-pty-terminal',
+  '0030':'0030-socket-server', '0040':'0040-cli-commands',
+  '0050':'0050-basic-sidebar', '0060':'0060-agent-lifecycle',
+  '0070':'0070-napkin-parser', '0080':'0080-fs-watcher',
+  '0100':'0100-design-sprint', '0110':'0110-session-continuity',
+  '0120':'0120-scroll-lock', '0130':'0130-git-integration',
+  '0140':'0140-token-counter',
+  '0200':'0200-sqlite-persistence', '0210':'0210-napkin-browser',
+  '0220':'0220-kanban-overlay', '0230':'0230-agent-comms-v2',
+  '0240':'0240-breadcrumb-nav', '0250':'0250-hot-reload',
+  '0260':'0260-error-boundary',
+  '0300':'0300-history-renderer', '0310':'0310-cmd-k-filter',
+  '0320':'0320-plugin-system', '0330':'0330-nepic-switcher',
+  '0340':'0340-agent-diff-view', '0350':'0350-keyboard-shortcuts',
+  '0360':'0360-status-bar', '0370':'0370-inline-annotations',
+  '0380':'0380-snapshot-restore', '0390':'0390-log-streaming',
+  '0400':'0400-multi-workspace', '0410':'0410-cloud-sync',
+  '0420':'0420-onboarding-flow', '0430':'0430-theme-customization',
+  '0440':'0440-split-terminal', '0450':'0450-agent-templates',
+  '0460':'0460-napkin-versioning', '0470':'0470-review-gates',
+  '0480':'0480-perf-monitoring', '0490':'0490-mobile-companion'
+};
+
+const T = {
+'002-nova':
+`<span class="t-cmd">$ nap ps</span>
+<span class="t-res">NAME             STATUS    NAPKIN</span>
+002-nova         <span style="color:var(--dot-run)">● run</span>     (architect)
+TA-100           <span style="color:var(--dot-done)">● done</span>    0100-design-sprint
+FS-100           <span style="color:var(--dot-run)">● run</span>     0100-design-sprint
+TE-100           <span style="color:var(--dot-nap)">◌ nap</span>     0100-design-sprint
+FS-110           <span style="color:var(--dot-done)">● done</span>    0110-session-continuity
+TE-110           <span style="color:var(--dot-done)">● done</span>    0110-session-continuity
+FS-120           <span style="color:var(--dot-done)">● done</span>    0120-scroll-lock
+FS-130           <span style="color:var(--dot-done)">● done</span>    0130-git-integration
+FS-140           <span style="color:var(--dot-done)">● done</span>    0140-token-counter
+FS-200           <span style="color:var(--dot-run)">● run</span>     0200-sqlite-persistence
+TE-200           <span style="color:var(--dot-run)">● run</span>     0200-sqlite-persistence
+TA-210           <span style="color:var(--dot-done)">● done</span>    0210-napkin-browser
+FS-210           <span style="color:var(--dot-run)">● run</span>     0210-napkin-browser
+FS-220           <span style="color:var(--dot-run)">● run</span>     0220-kanban-overlay
+FS-230           <span style="color:var(--dot-run)">● run</span>     0230-agent-comms-v2
+TE-230           <span style="color:var(--dot-nap)">◌ nap</span>     0230-agent-comms-v2
+FS-240           <span style="color:var(--dot-run)">● run</span>     0240-breadcrumb-nav
+FS-250           <span style="color:var(--dot-run)">● run</span>     0250-hot-reload
+FS-260           <span style="color:var(--dot-run)">● run</span>     0260-error-boundary
+
+20 agents. 9 running, 2 napping, 9 done.
+8 exited agents from 001-architect (foundation era).
+
+<span class="t-tool">⏺ Moving 0130-git-integration → REVIEW.</span>
+FS-130 done. Scoped diffs working — auto-commit on agent exit clean.
+
+<span class="t-tool">⏺ Moving 0140-token-counter → REVIEW.</span>
+FS-140 done. Status bar shows live token usage. Budget alerts wired.
+
+<span class="t-tool">⏺ 0200-sqlite: TE-200 found symlink sync bug.</span>
+Waiting for FS-200 to patch board-sync.ts before marking green.
+
+<span class="t-tool">⏺ Read(.nap/.../0230-agent-comms-v2/agents/001-fs-eng/prompt.md)</span>
+<span class="t-res">  ⎿ Read 34 lines</span>
+
+FS-230 still implementing v2 protocol. TE-230 napping until done.
+
+<span class="t-cmd">$ nap peek FS-210</span>
+<span class="t-res">  NapkinTree.tsx: 234 lines, card state machine wired...</span>
+
+<span class="t-cmd">$ nap peek FS-220</span>
+<span class="t-res">  KanbanOverlay.tsx: 178 lines, Cmd+\` toggle working...</span>
+
+Next: once 0200 + 0210 land, start agents for 0300-0360.
+`,
+'001-architect':
+`<span class="t-cmd">$ nap init spaces</span>
+<span class="t-res">  ⎿ Created nepic 02-nepic-spaces</span>
+
+Setting up foundation napkins (0010–0080)...
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0010-project-bootstrap.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 23 lines</span>
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0020-pty-terminal.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 18 lines</span>
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0030-socket-server.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 21 lines</span>
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0040-cli-commands.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 19 lines</span>
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0050-basic-sidebar.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 16 lines</span>
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0060-agent-lifecycle.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 22 lines</span>
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0070-napkin-parser.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 17 lines</span>
+
+<span class="t-tool">⏺ Write(.nap/.../10-napkins/0080-fs-watcher.nap.md)</span>
+<span class="t-res">  ⎿ Wrote 14 lines</span>
+
+Launching agents for all 8 foundation napkins...
+
+<span class="t-cmd">$ nap start 0010 0020 0030 0040 0050 0060 0070 0080 --role fs-eng</span>
+<span class="t-res">  ⎿ Started 8 agents</span>
+
+<span class="t-cmd">$ nap nap FS-010 FS-020 FS-030 FS-040 FS-050 FS-060 FS-070 FS-080</span>
+<span class="t-res">  all 8 agents done ✓</span>
+
+Foundation complete. 8/8 napkins green.
+Preparing handoff to nova...
+
+<span class="t-tool">⏺ Write(.nap/.../onboarding/nova-handoff.md)</span>
+<span class="t-res">  ⎿ Wrote 89 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'TA-100':
+`<span class="t-tool">⏺ Read(.nap/.../0100-design-sprint.spec.md)</span>
+<span class="t-res">  ⎿ Read 51 lines</span>
+
+Designing test architecture for the design sprint UI...
+
+9 integration points identified:
+  1. Card state transitions (collapsed → focused → extended)
+  2. Agent status dot rendering (run/done/nap/exit)
+  3. Artifact click → editor handoff
+  4. Terminal switching on agent click
+  5. Breadcrumb navigation (S → napkin → agent)
+  6. Kanban overlay toggle (Cmd+\`)
+  7. Kanban → sidebar navigation (→ key)
+  8. Directory snapshot accuracy (extended view)
+  9. Scroll lock mode transitions
+
+<span class="t-tool">⏺ Write(.nap/.../001-test-architect/response.md)</span>
+<span class="t-res">  ⎿ Wrote 89 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'FS-100':
+`<span class="t-tool">⏺ Read(.nap/.../002-fs-eng/prompt.md)</span>
+<span class="t-res">  ⎿ Read 147 lines</span>
+
+Building the v2-final.html mock — 40 napkins stress test...
+
+<span class="t-tool">⏺ Read(.nap/.../mocks/v2-busy-project.html)</span>
+<span class="t-res">  ⎿ Read 989 lines</span>
+
+Scaling up: same CSS, same JS patterns, 40 napkins with rich
+nested bullets, 2 architects, 20 agents with terminal content.
+
+<span class="t-tool">⏺ Write(.nap/.../mocks/v2-final.html)</span>
+<span class="t-res">  ⎿ Writing... (large file)</span>
+
+Sidebar: 2 architects + 8 DONE + 5 REVIEW + 7 DOING + 10 TODO + 10 BACKLOG
+Kanban: 5 columns, DOING cards start expanded
+Terminal: 20 agents with realistic output
+
+Wiring up all cross-references...
+`,
+'TE-100':
+`<span class="t-tool">⏺ Read(.nap/.../001-test-architect/response.md)</span>
+<span class="t-res">  ⎿ Read 89 lines</span>
+
+<span class="t-tool">⏺ Write(tests/design-sprint.test.ts)</span>
+<span class="t-res">  ⎿ Wrote 234 lines</span>
+
+<span class="t-cmd">$ npm test -- tests/design-sprint.test.ts</span>
+<span class="t-ok">  ✓ card-states/collapsed            (0.1s)</span>
+<span class="t-ok">  ✓ card-states/focused               (0.2s)</span>
+<span class="t-ok">  ✓ card-states/extended              (0.1s)</span>
+<span class="t-err">  ✗ card-states/click-artifact        FAILED
+    Cannot read property 'path' of undefined</span>
+<span class="t-ok">  ✓ agent-status/dots                 (0.1s)</span>
+<span class="t-ok">  ✓ agent-status/terminal-switch      (0.3s)</span>
+
+5/6 passed, 1 failed. Waiting for FS-100 to fix artifact click...
+
+<span class="t-cmd">$ nap nap FS-100 --timeout 300</span>
+<span style="color:var(--dot-nap)">◌ napping — waiting for FS-100</span>
+`,
+'FS-110':
+`<span class="t-tool">⏺ Read(.nap/.../0110-session-continuity.spec.md)</span>
+<span class="t-res">  ⎿ Read 31 lines</span>
+
+Implementing session continuity...
+
+<span class="t-tool">⏺ Write(src/main/session-store.ts)</span>
+<span class="t-res">  ⎿ Wrote 123 lines</span>
+
+<span class="t-tool">⏺ Write(src/main/session-recovery.ts)</span>
+<span class="t-res">  ⎿ Wrote 89 lines</span>
+
+<span class="t-tool">⏺ Edit(src/main/main.ts)</span>
+<span class="t-res">  ⎿ Lines 78-95: Session recovery on app launch</span>
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+<span class="t-tool">⏺ Write(.nap/.../001-fs-eng/response.md)</span>
+<span class="t-res">  ⎿ Wrote 134 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'TE-110':
+`<span class="t-tool">⏺ Read(.nap/.../0110-session-continuity.test.md)</span>
+<span class="t-res">  ⎿ Read 45 lines</span>
+
+<span class="t-tool">⏺ Write(tests/session-continuity.test.ts)</span>
+<span class="t-res">  ⎿ Wrote 189 lines</span>
+
+<span class="t-cmd">$ npm test -- tests/session-continuity.test.ts</span>
+<span class="t-ok">  ✓ session/serialize-state            (0.1s)</span>
+<span class="t-ok">  ✓ session/recover-on-launch          (0.3s)</span>
+<span class="t-ok">  ✓ session/re-attach-terminals        (0.4s)</span>
+<span class="t-ok">  ✓ session/handle-dead-agents         (0.2s)</span>
+<span class="t-ok">  ✓ session/architect-resume           (0.5s)</span>
+<span class="t-ok">  ✓ session/concurrent-recovery        (0.3s)</span>
+
+6/6 passed. All clear.
+
+<span class="t-tool">⏺ Write(.nap/.../002-test-eng/response.md)</span>
+<span class="t-res">  ⎿ Wrote 45 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'FS-120':
+`<span class="t-tool">⏺ Read(.nap/.../0120-scroll-lock.spec.md)</span>
+<span class="t-res">  ⎿ Read 28 lines</span>
+
+Implementing scroll lock modes...
+
+<span class="t-tool">⏺ Write(src/renderer/hooks/useScrollLock.ts)</span>
+<span class="t-res">  ⎿ Wrote 67 lines</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/components/Terminal.tsx)</span>
+<span class="t-res">  ⎿ Lines 34-56: Integrate scroll lock hook</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/styles/terminal.css)</span>
+<span class="t-res">  ⎿ Lines 12-18: Blue/amber border for follow/read</span>
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+Manual test: scroll up → amber border → read mode.
+New output arrives → stays locked. Click "follow" → blue → auto-scroll.
+
+<span class="t-tool">⏺ Write(.nap/.../001-fs-eng/response.md)</span>
+<span class="t-res">  ⎿ Wrote 56 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'FS-130':
+`<span class="t-tool">⏺ Read(.nap/.../0130-git-integration.spec.md)</span>
+<span class="t-res">  ⎿ Read 36 lines</span>
+
+Implementing git integration with scoped diffs...
+
+<span class="t-tool">⏺ Write(src/main/git-tracker.ts)</span>
+<span class="t-res">  ⎿ Wrote 112 lines</span>
+
+<span class="t-tool">⏺ Write(src/main/auto-commit.ts)</span>
+<span class="t-res">  ⎿ Wrote 78 lines</span>
+
+<span class="t-tool">⏺ Edit(src/main/agent-lifecycle.ts)</span>
+<span class="t-res">  ⎿ Lines 89-102: Track file touches per session</span>
+
+<span class="t-cmd">$ npm test -- tests/git-tracker.test.ts</span>
+<span class="t-ok">  ✓ git/track-touched-files             (0.2s)</span>
+<span class="t-ok">  ✓ git/scoped-diff-generation          (0.3s)</span>
+<span class="t-ok">  ✓ git/auto-commit-on-done             (0.4s)</span>
+<span class="t-ok">  ✓ git/commit-message-format           (0.1s)</span>
+
+4/4 passed.
+
+<span class="t-tool">⏺ Write(.nap/.../001-fs-eng/response.md)</span>
+<span class="t-res">  ⎿ Wrote 67 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'FS-140':
+`<span class="t-tool">⏺ Read(.nap/.../0140-token-counter.spec.md)</span>
+<span class="t-res">  ⎿ Read 29 lines</span>
+
+Building live token counter for status bar...
+
+<span class="t-tool">⏺ Write(src/main/token-tracker.ts)</span>
+<span class="t-res">  ⎿ Wrote 94 lines</span>
+
+<span class="t-tool">⏺ Write(src/renderer/components/TokenBadge.tsx)</span>
+<span class="t-res">  ⎿ Wrote 45 lines</span>
+
+<span class="t-tool">⏺ Edit(src/main/agent-lifecycle.ts)</span>
+<span class="t-res">  ⎿ Lines 112-128: Hook token counting into pty output</span>
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+Budget system: warn at 80% (yellow flash), pause at 100% (red + confirm).
+Per-napkin limits configurable in nap.md frontmatter.
+
+<span class="t-tool">⏺ Write(.nap/.../001-fs-eng/response.md)</span>
+<span class="t-res">  ⎿ Wrote 78 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'FS-200':
+`<span class="t-tool">⏺ Read(.nap/.../0200-sqlite-persistence.spec.md)</span>
+<span class="t-res">  ⎿ Read 38 lines</span>
+
+Setting up better-sqlite3 with dual-truth model:
+filesystem for content, database for status.
+
+<span class="t-tool">⏺ Write(src/main/database.ts)</span>
+<span class="t-res">  ⎿ Wrote 145 lines</span>
+
+<span class="t-tool">⏺ Write(src/main/models/agent-status.ts)</span>
+<span class="t-res">  ⎿ Wrote 67 lines</span>
+
+<span class="t-tool">⏺ Write(src/main/models/napkin-status.ts)</span>
+<span class="t-res">  ⎿ Wrote 52 lines</span>
+
+<span class="t-tool">⏺ Edit(src/main/main.ts)</span>
+<span class="t-res">  ⎿ Lines 34-41: Initialize database on app ready</span>
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+Now implementing board symlink sync...
+
+<span class="t-tool">⏺ Write(src/main/board-sync.ts)</span>
+<span class="t-res">  ⎿ Wrote 89 lines</span>
+`,
+'TE-200':
+`<span class="t-tool">⏺ Read(.nap/.../0200-sqlite-persistence.test.md)</span>
+<span class="t-res">  ⎿ Read 56 lines</span>
+
+Implementing persistence tests against real sqlite...
+
+<span class="t-tool">⏺ Write(tests/persistence.test.ts)</span>
+<span class="t-res">  ⎿ Wrote 312 lines</span>
+
+<span class="t-cmd">$ npm test -- tests/persistence.test.ts</span>
+<span class="t-ok">  ✓ db/init-creates-tables              (0.1s)</span>
+<span class="t-ok">  ✓ db/agent-status-round-trip          (0.1s)</span>
+<span class="t-ok">  ✓ db/napkin-status-round-trip         (0.1s)</span>
+<span class="t-ok">  ✓ db/survives-restart                 (0.3s)</span>
+<span class="t-err">  ✗ db/board-symlink-sync               FAILED
+    symlink not created after status change</span>
+<span class="t-ok">  ✓ db/concurrent-writes                (0.2s)</span>
+<span class="t-ok">  ✓ db/wal-mode-enabled                 (0.1s)</span>
+
+6/7 passed. Waiting for FS-200 to fix board-sync...
+
+<span class="t-cmd">$ npm test -- --watch tests/persistence.test.ts</span>
+<span class="t-res">  watching for changes...</span>
+`,
+'TA-210':
+`<span class="t-tool">⏺ Read(.nap/.../0210-napkin-browser.spec.md)</span>
+<span class="t-res">  ⎿ Read 44 lines</span>
+
+Designing test architecture for the napkin browser...
+
+Key integration points:
+  1. Tree renders from filesystem state
+  2. Collapsed → focused → extended transitions
+  3. Artifact badge generation
+  4. Agent directory detection + status mapping
+  5. Cmd+E toggle persistence across re-renders
+  6. Scroll position preservation on card change
+  7. Filter bar fuzzy matching
+
+<span class="t-tool">⏺ Write(.nap/.../001-test-architect/response.md)</span>
+<span class="t-res">  ⎿ Wrote 72 lines</span>
+
+<span class="t-cmd">$ nap done</span>
+<span style="color:var(--dot-done)">● done</span>
+`,
+'FS-210':
+`<span class="t-tool">⏺ Read(.nap/.../0210-napkin-browser.spec.md)</span>
+<span class="t-res">  ⎿ Read 44 lines</span>
+
+<span class="t-tool">⏺ Read(.nap/.../001-test-architect/response.md)</span>
+<span class="t-res">  ⎿ Read 72 lines</span>
+
+Building the napkin browser tree component...
+
+<span class="t-tool">⏺ Write(src/renderer/components/NapkinTree.tsx)</span>
+<span class="t-res">  ⎿ Wrote 234 lines</span>
+
+<span class="t-tool">⏺ Write(src/renderer/hooks/useNapkinTree.ts)</span>
+<span class="t-res">  ⎿ Wrote 78 lines</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/components/NapkinTree.tsx)</span>
+<span class="t-res">  ⎿ Lines 56-89: Card state machine (collapsed/focused/extended)</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/components/NapkinTree.tsx)</span>
+<span class="t-res">  ⎿ Lines 134-167: Agent sub-entries with terminal click</span>
+
+Implementing filesystem watcher for live updates...
+
+<span class="t-tool">⏺ Write(src/main/napkin-watcher.ts)</span>
+<span class="t-res">  ⎿ Wrote 56 lines</span>
+`,
+'FS-220':
+`<span class="t-tool">⏺ Read(.nap/.../0220-kanban-overlay.spec.md)</span>
+<span class="t-res">  ⎿ Read 32 lines</span>
+
+Building the kanban quake console overlay...
+
+<span class="t-tool">⏺ Write(src/renderer/components/KanbanOverlay.tsx)</span>
+<span class="t-res">  ⎿ Wrote 178 lines</span>
+
+<span class="t-tool">⏺ Write(src/renderer/hooks/useKanban.ts)</span>
+<span class="t-res">  ⎿ Wrote 56 lines</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/components/KanbanOverlay.tsx)</span>
+<span class="t-res">  ⎿ Lines 45-78: Column rendering with card counts</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/App.tsx)</span>
+<span class="t-res">  ⎿ Lines 12-18: Cmd+\` keybinding to toggle overlay</span>
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+Now wiring up → navigation from kanban card to sidebar...
+
+<span class="t-tool">⏺ Edit(src/renderer/components/KanbanOverlay.tsx)</span>
+<span class="t-res">  ⎿ Lines 89-112: kanbanNav() with flash animation</span>
+`,
+'FS-230':
+`<span class="t-tool">⏺ Read(.nap/.../0230-agent-comms-v2.spec.md)</span>
+<span class="t-res">  ⎿ Read 41 lines</span>
+
+Implementing v2 of the agent communication protocol...
+
+<span class="t-tool">⏺ Write(src/main/comms/protocol-v2.ts)</span>
+<span class="t-res">  ⎿ Wrote 156 lines</span>
+
+<span class="t-tool">⏺ Write(src/main/comms/file-lock.ts)</span>
+<span class="t-res">  ⎿ Wrote 78 lines</span>
+
+<span class="t-tool">⏺ Write(src/main/comms/watcher-notify.ts)</span>
+<span class="t-res">  ⎿ Wrote 45 lines</span>
+
+<span class="t-tool">⏺ Edit(src/main/agent-lifecycle.ts)</span>
+<span class="t-res">  ⎿ Lines 134-156: Integrate poke/nap/done v2 handlers</span>
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+Implementing response.md structured handoff format...
+
+<span class="t-tool">⏺ Write(src/main/comms/handoff.ts)</span>
+<span class="t-res">  ⎿ Wrote 67 lines</span>
+`,
+'TE-230':
+`<span class="t-tool">⏺ Read(.nap/.../0230-agent-comms-v2.test.md)</span>
+<span class="t-res">  ⎿ Read 38 lines</span>
+
+<span class="t-tool">⏺ Write(tests/agent-comms-v2.test.ts)</span>
+<span class="t-res">  ⎿ Wrote 267 lines</span>
+
+Tests written but can't run yet — FS-230 still building protocol v2.
+Modules not exported yet:
+  - protocol-v2.ts (exists but poke handler incomplete)
+  - file-lock.ts (exists, looks ready)
+  - handoff.ts (not started)
+
+<span class="t-cmd">$ nap nap FS-230 --timeout 600</span>
+<span style="color:var(--dot-nap)">◌ napping — waiting for FS-230</span>
+`,
+'FS-240':
+`<span class="t-tool">⏺ Read(.nap/.../0240-breadcrumb-nav.nap.md)</span>
+<span class="t-res">  ⎿ Read 19 lines</span>
+
+Building breadcrumb navigation for terminal header...
+
+<span class="t-tool">⏺ Write(src/renderer/components/Breadcrumb.tsx)</span>
+<span class="t-res">  ⎿ Wrote 89 lines</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/components/Breadcrumb.tsx)</span>
+<span class="t-res">  ⎿ Lines 23-45: Click handlers for S, napkin, agent segments</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/components/Terminal.tsx)</span>
+<span class="t-res">  ⎿ Lines 8-12: Replace static header with Breadcrumb component</span>
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+Testing: click S → shows architect terminal. Click napkin → focuses card.
+Status dot + label rendering next to agent name in breadcrumb.
+
+<span class="t-tool">⏺ Edit(src/renderer/components/Breadcrumb.tsx)</span>
+<span class="t-res">  ⎿ Lines 56-67: Status dot inline with current segment</span>
+`,
+'FS-250':
+`<span class="t-tool">⏺ Read(.nap/.../0250-hot-reload.spec.md)</span>
+<span class="t-res">  ⎿ Read 24 lines</span>
+
+Setting up HMR pipeline for development...
+
+<span class="t-tool">⏺ Edit(vite.config.ts)</span>
+<span class="t-res">  ⎿ Lines 12-28: Enable React fast refresh plugin</span>
+
+<span class="t-tool">⏺ Write(src/main/dev-reload.ts)</span>
+<span class="t-res">  ⎿ Wrote 56 lines</span>
+
+<span class="t-tool">⏺ Edit(src/main/main.ts)</span>
+<span class="t-res">  ⎿ Lines 145-162: Graceful main process restart</span>
+
+Key challenge: preserving terminal pty connections across reload.
+Solution: detach pty handles to shared memory before restart,
+re-attach after new main process is ready.
+
+<span class="t-tool">⏺ Write(src/main/pty-persistence.ts)</span>
+<span class="t-res">  ⎿ Wrote 89 lines</span>
+
+<span class="t-cmd">$ npm run dev</span>
+<span class="t-ok">  ✓ HMR enabled, watching for changes...</span>
+`,
+'FS-260':
+`<span class="t-tool">⏺ Read(.nap/.../0260-error-boundary.nap.md)</span>
+<span class="t-res">  ⎿ Read 18 lines</span>
+
+Implementing per-panel error boundaries...
+
+<span class="t-tool">⏺ Write(src/renderer/components/ErrorBoundary.tsx)</span>
+<span class="t-res">  ⎿ Wrote 78 lines</span>
+
+<span class="t-tool">⏺ Write(src/renderer/components/ErrorFallback.tsx)</span>
+<span class="t-res">  ⎿ Wrote 34 lines</span>
+
+<span class="t-tool">⏺ Edit(src/renderer/App.tsx)</span>
+<span class="t-res">  ⎿ Lines 24-38: Wrap Sidebar, Terminal, Kanban in ErrorBoundary</span>
+
+<span class="t-tool">⏺ Write(src/main/error-reporter.ts)</span>
+<span class="t-res">  ⎿ Wrote 45 lines</span>
+
+Auto-report: stack trace + component state snapshot → .nap/crash-logs/
+
+<span class="t-cmd">$ npm run build</span>
+<span class="t-ok">  ✓ Compiled successfully</span>
+
+Testing: throw in Sidebar → "something broke" + retry button.
+Terminal keeps running. Recovery works on retry click.
+`
+};
+
+let currentAgent = '002-nova';
+let focusedCard = '002-nova';
+let extendedCard = null;
+
+function toggleCard(cardId) {
+  const card = document.querySelector(`[data-card="${cardId}"]`);
+  if (!card) return;
+
+  if (focusedCard === cardId) {
+    card.classList.remove('focused','extended');
+    resetContent(cardId);
+    focusedCard = null;
+    extendedCard = null;
+    return;
+  }
+
+  if (focusedCard) {
+    const prev = document.querySelector(`[data-card="${focusedCard}"]`);
+    if (prev) { prev.classList.remove('focused','extended'); resetContent(focusedCard); }
+  }
+
+  card.classList.add('focused');
+  card.classList.remove('extended');
+  resetContent(cardId);
+  focusedCard = cardId;
+  extendedCard = null;
+
+  const agent = cardDefaultAgent[cardId];
+  if (agent) {
+    switchTerminal(agent, napkinName[cardId] || null);
+  } else if (cardId !== '002-nova' && cardId !== '001-architect') {
+    switchTerminal('002-nova', null);
+  }
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function resetContent(cardId) {
+  const body = document.getElementById(`body-${cardId}`);
+  if (!body) return;
+  const f = body.querySelector('.focused-content');
+  const e = body.querySelector('.extended-content');
+  if (f) f.style.display = '';
+  if (e) e.style.display = 'none';
+}
+
+function toggleExtended() {
+  if (!focusedCard) return;
+  const card = document.querySelector(`[data-card="${focusedCard}"]`);
+  const body = document.getElementById(`body-${focusedCard}`);
+  if (!body) return;
+  const f = body.querySelector('.focused-content');
+  const e = body.querySelector('.extended-content');
+  if (extendedCard === focusedCard) {
+    card.classList.remove('extended');
+    if (f) f.style.display = '';
+    if (e) e.style.display = 'none';
+    extendedCard = null;
+    showToast('focused view');
+  } else {
+    card.classList.add('extended');
+    if (f) f.style.display = 'none';
+    if (e) e.style.display = '';
+    extendedCard = focusedCard;
+    showToast('extended view');
+  }
+}
+
+function switchTerminal(agentId, napkin) {
+  if (!T[agentId]) return;
+  currentAgent = agentId;
+  const meta = agentMeta[agentId];
+  const bcNapkin = document.getElementById('bc-napkin');
+  const bcSep2 = document.getElementById('bc-sep2');
+  if (napkin) { bcNapkin.textContent = napkin; bcNapkin.style.display = ''; bcSep2.style.display = ''; }
+  else { bcNapkin.style.display = 'none'; bcSep2.style.display = 'none'; }
+  document.getElementById('term-name').textContent = agentId;
+  document.getElementById('term-status').textContent = meta.status;
+  document.getElementById('term-dot').className = 'dot ' + meta.dotClass;
+  document.getElementById('term-content').innerHTML = T[agentId];
+  const c = document.getElementById('term-content');
+  c.scrollTop = c.scrollHeight;
+  document.querySelectorAll('.card-line.agent').forEach(el => el.classList.remove('active-agent'));
+  document.querySelectorAll(`.card-line[data-terminal="${agentId}"]`).forEach(el => el.classList.add('active-agent'));
+}
+
+function navBreadcrumb(level) {
+  if (level === 'nepic') { switchTerminal('002-nova', null); toggleCard('002-nova'); }
+  else if (level === 'napkin') {
+    const n = document.getElementById('bc-napkin').textContent;
+    for (const [k,v] of Object.entries(napkinName)) { if (v === n) { toggleCard(k); break; } }
+  }
+}
+
+function openFile(p) { showToast('↗ opens ' + p + ' in editor'); }
+function copyPath(ev, p) { ev.stopPropagation(); showToast('⎘ copied: ' + p); }
+
+function toggleKbCard(id) {
+  const c = document.querySelector(`[data-kb="${id}"]`);
+  if (c) c.classList.toggle('expanded');
+}
+
+function kanbanNav(ev, cardId) {
+  ev.stopPropagation();
+  document.getElementById('kanban').classList.remove('open');
+  setTimeout(() => {
+    toggleCard(cardId);
+    const card = document.querySelector(`[data-card="${cardId}"]`);
+    if (card) {
+      card.classList.add('flash');
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => card.classList.remove('flash'), 1200);
+    }
+  }, 200);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.innerHTML = msg;
+  t.classList.add('show');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey||e.ctrlKey) && e.key === 'e') { e.preventDefault(); toggleExtended(); }
+  if ((e.metaKey||e.ctrlKey) && e.key === '`') { e.preventDefault(); document.getElementById('kanban').classList.toggle('open'); }
+});
+
+switchTerminal('002-nova', null);
+</script>
+</body>
+</html>
