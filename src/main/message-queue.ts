@@ -37,7 +37,24 @@ function deliverNext(id: string): void {
   const msg = entry.messages.shift()!;
 
   if (writeFn) {
-    writeFn(id, msg + '\r\n');
+    // Three-step delivery for raw-mode apps (Claude Code / Ink):
+    // 1. Send text
+    // 2. Escape to dismiss autocomplete
+    // 3. CR to submit (Enter in raw mode)
+    writeFn(id, msg);
+    setTimeout(() => {
+      if (writeFn) writeFn(id, '\x1b');  // Escape
+      setTimeout(() => {
+        if (writeFn) writeFn(id, '\r');  // Enter (CR, not LF)
+
+        if (entry.messages.length > 0) {
+          setTimeout(() => deliverNext(id), DELIVERY_DELAY_MS);
+        } else {
+          entry.delivering = false;
+        }
+      }, 100);
+    }, 300);
+    return;
   }
 
   if (entry.messages.length > 0) {
