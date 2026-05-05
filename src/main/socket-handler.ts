@@ -55,14 +55,16 @@ export function createRequestHandler(
         const name = req.name as string;
         const role = req.role as string;
         const nepicId = req.nepicId as string | undefined;
-        const result = await model.createAgentStub(napkinSlug, name, role, nepicId);
+        const parentId = req.parentId as string | undefined;
+        const result = await model.createAgentStub(napkinSlug, name, role, nepicId, parentId);
         return { ...result };
       }
 
       case 'create-architect': {
         const name = req.name as string;
         const nepicId = req.nepicId as string | undefined;
-        const result = await model.createArchitectStub(name, nepicId);
+        const parentId = req.parentId as string | undefined;
+        const result = await model.createArchitectStub(name, nepicId, parentId);
         return { ...result };
       }
 

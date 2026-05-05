@@ -82,9 +82,12 @@ No running app required.
   create: `Usage: nap-pro create <type> <name> [options]
 
   nap-pro create napkin <slug> [--status backlog] [--nepic <slug>]
-  nap-pro create agent <name> --napkin <slug> --role <role> [--nepic <slug>]
-  nap-pro create architect <name> [--nepic <slug>]
+  nap-pro create agent <name> --napkin <slug> --role <role> [--nepic <slug>] [--parent <agent-id>]
+  nap-pro create architect <name> [--nepic <slug>] [--parent <agent-id>]
   nap-pro create nepic <slug> --name <display-name>
+
+When --parent is omitted, the spawning agent's id is auto-detected from
+$NAP_SESSION_ID. Pass it explicitly to override or break the chain.
 
 All create commands output JSON to stdout.
 `,
@@ -992,6 +995,7 @@ async function main(): Promise<void> {
             name: args[1],
             role: flags['role'] as string,
             nepicId: (flags['nepic'] as string) || undefined,
+            parentId: (flags['parent'] as string) || process.env['NAP_SESSION_ID'] || undefined,
           });
           if (res['error']) {
             process.stderr.write(String(res['message']) + '\n');
@@ -1011,6 +1015,7 @@ async function main(): Promise<void> {
             id: requestId++,
             name: args[1],
             nepicId: (flags['nepic'] as string) || undefined,
+            parentId: (flags['parent'] as string) || process.env['NAP_SESSION_ID'] || undefined,
           });
           if (res['error']) {
             process.stderr.write(String(res['message']) + '\n');

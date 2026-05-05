@@ -98,8 +98,8 @@ export interface NapModel {
 
   // ── New methods for 0210 ──
   createNapkin(slug: string, status?: NapkinStatus, nepicId?: string): Promise<CreateNapkinResult>;
-  createAgentStub(napkinSlug: string, name: string, role: string, nepicId?: string): Promise<CreateAgentResult>;
-  createArchitectStub(name: string, nepicId?: string): Promise<CreateArchitectResult>;
+  createAgentStub(napkinSlug: string, name: string, role: string, nepicId?: string, parentId?: string): Promise<CreateAgentResult>;
+  createArchitectStub(name: string, nepicId?: string, parentId?: string): Promise<CreateArchitectResult>;
   createNepic(slug: string, displayName: string): Promise<CreateNepicResult>;
   startAgentByName(name: string, prompt: string | null, ptySpawner: PtySpawner, nepicId?: string): Promise<StartAgentResult>;
   getStatus(query: { napkin?: string; agent?: string; nepic?: string }): StatusResult;
@@ -708,6 +708,7 @@ export function createModel(fs: FileSystem): NapModel {
     name: string,
     role: string,
     _nepicId?: string,
+    parentId?: string,
   ): Promise<CreateAgentResult> {
     const currentNepicId = _nepicId ?? getNepicSlug();
 
@@ -727,15 +728,18 @@ export function createModel(fs: FileSystem): NapModel {
     const id = crypto.randomUUID();
     const now = Date.now();
 
-    // Get parent info from NAP_SESSION_ID if available
+    const parent = parentId ? findAgentById(parentId) : null;
+    const parentName = parent?.name ?? null;
+    const resolvedParentId = parent ? parentId! : null;
+
     const markerData = {
       cc_session_uuid: id,
       role,
       name,
       napkin: napkinSlug,
       nepic: currentNepicId,
-      parent: null as string | null,
-      parent_id: null as string | null,
+      parent: parentName,
+      parent_id: resolvedParentId,
       created_at: now,
       started: false,
       exited: false,
@@ -750,8 +754,8 @@ export function createModel(fs: FileSystem): NapModel {
       role,
       nepicId: currentNepicId,
       napkinId: napkinSlug,
-      parentName: null,
-      parentId: null,
+      parentName,
+      parentId: resolvedParentId,
       createdAt: now,
       started: false,
       exited: false,
@@ -771,6 +775,7 @@ export function createModel(fs: FileSystem): NapModel {
   async function createArchitectStub(
     name: string,
     _nepicId?: string,
+    parentId?: string,
   ): Promise<CreateArchitectResult> {
     const currentNepicId = _nepicId ?? getNepicSlug();
     const archPath = nepicDir + '/20-architects/' + name;
@@ -778,13 +783,17 @@ export function createModel(fs: FileSystem): NapModel {
     const id = crypto.randomUUID();
     const now = Date.now();
 
+    const parent = parentId ? findAgentById(parentId) : null;
+    const parentName = parent?.name ?? null;
+    const resolvedParentId = parent ? parentId! : null;
+
     const markerData = {
       cc_session_uuid: id,
       role: 'architect',
       name,
       nepic: currentNepicId,
-      parent: null,
-      parent_id: null,
+      parent: parentName,
+      parent_id: resolvedParentId,
       created_at: now,
       started: false,
       exited: false,
@@ -799,8 +808,8 @@ export function createModel(fs: FileSystem): NapModel {
       role: 'architect',
       nepicId: currentNepicId,
       napkinId: null,
-      parentName: null,
-      parentId: null,
+      parentName,
+      parentId: resolvedParentId,
       createdAt: now,
       started: false,
       exited: false,

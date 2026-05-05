@@ -58,6 +58,7 @@ export interface CreateAgentRequest {
   name: string;
   role: string;
   nepicId?: string;
+  parentId?: string;
 }
 
 export interface CreateArchitectRequest {
@@ -65,6 +66,7 @@ export interface CreateArchitectRequest {
   id: number;
   name: string;
   nepicId?: string;
+  parentId?: string;
 }
 
 export interface CreateNepicRequest {

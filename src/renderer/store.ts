@@ -21,6 +21,7 @@ export interface NapStore {
   debugPanelCollapsed: boolean;
   debugPanelTab: 'model' | 'filesystem' | 'events';
   kanbanVisible: boolean;
+  collapsedAgentIds: Set<string>;
 
   // ── Actions ──
   applySnapshot: (snapshot: AppSnapshot) => void;
@@ -36,6 +37,7 @@ export interface NapStore {
   setBrowserFilterVisible: (visible: boolean) => void;
   toggleDebugPanel: () => void;
   setDebugPanelTab: (tab: 'model' | 'filesystem' | 'events') => void;
+  toggleAgentCollapsed: (agentId: string) => void;
 }
 
 // Per-nepic renderer state memory (not persisted)
@@ -64,6 +66,7 @@ export const useNapStore = create<NapStore>((set, get) => ({
   debugPanelCollapsed: true,
   debugPanelTab: 'model' as const,
   kanbanVisible: false,
+  collapsedAgentIds: new Set<string>(),
 
   // Snapshot only updates model state — renderer-only state preserved
   applySnapshot: (snapshot: AppSnapshot) => {
@@ -184,11 +187,22 @@ export const useNapStore = create<NapStore>((set, get) => ({
     set({ debugPanelTab: tab });
     persistUiState({ debugPanelCollapsed: get().debugPanelCollapsed, debugPanelTab: tab });
   },
+
+  toggleAgentCollapsed: (agentId: string) => {
+    const next = new Set(get().collapsedAgentIds);
+    if (next.has(agentId)) {
+      next.delete(agentId);
+    } else {
+      next.add(agentId);
+    }
+    set({ collapsedAgentIds: next });
+    persistUiState({ collapsedAgentIds: Array.from(next) });
+  },
 }));
 
 // ── UI state persistence helpers ──
 
-function persistUiState(partial: { debugPanelCollapsed?: boolean; debugPanelTab?: string }) {
+function persistUiState(partial: { debugPanelCollapsed?: boolean; debugPanelTab?: string; collapsedAgentIds?: string[] }) {
   if (typeof window !== 'undefined' && window.electronAPI?.saveUiState) {
     window.electronAPI.saveUiState(partial);
   }
@@ -203,6 +217,9 @@ export async function loadPersistedUiState(): Promise<void> {
   if (typeof state.debugPanelCollapsed === 'boolean') updates.debugPanelCollapsed = state.debugPanelCollapsed;
   if (state.debugPanelTab === 'model' || state.debugPanelTab === 'filesystem' || state.debugPanelTab === 'events') {
     updates.debugPanelTab = state.debugPanelTab;
+  }
+  if (Array.isArray(state.collapsedAgentIds)) {
+    updates.collapsedAgentIds = new Set(state.collapsedAgentIds.filter((x): x is string => typeof x === 'string'));
   }
   if (Object.keys(updates).length > 0) useNapStore.setState(updates);
 }

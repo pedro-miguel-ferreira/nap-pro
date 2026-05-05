@@ -3,6 +3,7 @@ import { useNapStore } from './store';
 import type { CardViewMode } from './store';
 import type { NapkinState, AgentState, NapkinStatus, Entry, FileEntry, DirEntry } from '../shared/bridge-types';
 import { dotStyle, roleColor } from '../shared/dot-style';
+import { AgentSubtree, buildAgentChildren } from './AgentSubtree';
 
 // ── Phase colors ──
 
@@ -311,87 +312,62 @@ function NapkinCard({
 
           {/* Non-agent subdirs in extended only — already handled by EntryTree */}
 
-          {/* Agents */}
-          {napkin.agents.map((agent, i) => (
-            <div key={`ag-${i}`}>
-              <div
-                data-testid="browser-agent"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (agent.started || agent.archived) setActiveTerminal(agent.id);
-                }}
-                style={{
-                  padding: '1px 0 1px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  cursor: (agent.started || agent.archived) ? 'pointer' : 'default',
-                  borderRadius: 3,
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')
-                }
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                <span style={{ flexShrink: 0, width: 10, display: 'flex', justifyContent: 'center' }}>
-                  <AgentDot agent={agent} size={8} />
-                </span>
-                <span
-                  style={{
-                    flex: 1,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    color: '#cccccc',
-                  }}
-                >
-                  {agent.name}/
-                </span>
-                <span style={{ color: roleColor(agent.role), fontSize: 12, flexShrink: 0 }}>
-                  {agent.archived ? 'archived' : agent.exited ? 'exited' : agent.done ? 'done' : agent.running ? 'run' : 'wait'}
-                </span>
-              </div>
+          {/* Agents — rendered as a tree (parentId-based, collapsible) */}
+          {(() => {
+            const childrenMap = buildAgentChildren(napkin.agents);
+            const roots = childrenMap.get(null) ?? [];
 
-              {/* Extended view: [terminal] + agent files */}
-              {showExtended && (
-                <>
-                  {(agent.started || agent.archived) && (
-                    <div
-                      data-testid="terminal-entry"
-                      style={{
-                        padding: '1px 0 1px 32px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        cursor: 'pointer',
-                        borderRadius: 3,
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveTerminal(agent.id);
-                      }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')
-                      }
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <span style={{ color: '#6b7280', flexShrink: 0, fontSize: 12 }}>*</span>
-                      <span style={{ color: '#6b7280', fontStyle: 'italic', fontSize: 12 }}>
-                        [terminal]
-                      </span>
-                    </div>
-                  )}
-                  {agent.entries.length > 0 && (
-                    <EntryTree
-                      entries={agent.entries}
-                      indent={32}
-                      showControls={true}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          ))}
+            const renderAgentBody = showExtended
+              ? (agent: AgentState, indent: number) => (
+                  <>
+                    {(agent.started || agent.archived) && (
+                      <div
+                        data-testid="terminal-entry"
+                        style={{
+                          padding: `1px 0 1px ${indent}px`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          borderRadius: 3,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveTerminal(agent.id);
+                        }}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')
+                        }
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        <span style={{ color: '#6b7280', flexShrink: 0, fontSize: 12 }}>*</span>
+                        <span style={{ color: '#6b7280', fontStyle: 'italic', fontSize: 12 }}>
+                          [terminal]
+                        </span>
+                      </div>
+                    )}
+                    {agent.entries.length > 0 && (
+                      <EntryTree
+                        entries={agent.entries}
+                        indent={indent}
+                        showControls={true}
+                      />
+                    )}
+                  </>
+                )
+              : undefined;
+
+            return roots.map((agent) => (
+              <AgentSubtree
+                key={agent.id}
+                agent={agent}
+                childrenMap={childrenMap}
+                depth={0}
+                baseIndent={16}
+                renderAgentBody={renderAgentBody}
+              />
+            ));
+          })()}
 
           {/* Dim summary for all-exited agents in focused (not extended) */}
           {!showExtended && napkin.agents.length > 0 && napkin.agents.every((a) => a.exited) && (

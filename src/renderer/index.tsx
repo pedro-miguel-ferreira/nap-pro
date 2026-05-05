@@ -33,6 +33,12 @@ declare global {
       switchNepic: (id: string) => Promise<unknown>;
       createNepic: (name: string) => Promise<unknown>;
       spawnSuccessor: (id: string) => Promise<{ ok?: boolean; newId?: string; error?: boolean; message?: string }>;
+      // Optional — wired in later slices. Context menu calls them through `?.()`.
+      pauseAgent?: (id: string) => Promise<unknown>;
+      resumeAgent?: (id: string) => Promise<unknown>;
+      stopAgent?: (id: string) => Promise<unknown>;
+      openActivityPanel?: (id: string, scope: 'agent' | 'subtree') => void;
+      openDiffPanel?: (id: string) => void;
     };
   }
 }
