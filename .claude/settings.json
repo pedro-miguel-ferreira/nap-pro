@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write(src/**)",
+      "Write(tests/**)",
+      "Write(.napkins/**)",
+      "Write(package.json)",
+      "Write(tsconfig*.json)",
+      "Write(vitest.config.*)",
+      "Write(playwright.config.*)",
+      "Write(electron.vite.config.*)",
+      "Bash(npm install*)",
+      "Bash(npm run*)",
+      "Bash(npm test*)",
+      "Bash(npx tsc*)",
+      "Bash(npx vitest*)",
+      "Bash(npx playwright*)",
+      "Bash(mkdir -p *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "WebSearch",
+      "WebFetch"
+    ]
+  }
+}
