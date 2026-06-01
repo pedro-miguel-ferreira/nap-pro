@@ -324,13 +324,21 @@ nap-pro permission-response [--list] --agent <id> --decision allow|deny [--messa
   draft PR with `gh pr create --draft` (napkin doc as the body). The runner also
   auto-inserts one before reviewer stages, and there's a legacy path that pokes
   the architect to do it via its Bash tool. **This flow is currently broken** —
-  don't rely on it to create PRs. For now, push the branch and open the PR
-  manually:
-  ```bash
-  cd <project>-worktrees/<slug>
-  git push -u origin nap-pro/<slug>
-  gh pr create --draft --base main --head nap-pro/<slug>
-  ```
+  don't rely on the automatic stage to create PRs.
+
+  **Workaround (manual, in-app):**
+  1. Ask the **last agent** in the flow to open the PR itself — it already has
+     the worktree as its cwd and a Bash tool. `poke` (or `ask`) it to push the
+     branch and open a draft PR, e.g.:
+     ```
+     nap-pro poke <last-agent> "Push this worktree branch and open a draft PR with `gh pr create --draft`, then reply with the PR URL."
+     ```
+  2. Take the PR URL it reports back, then on the napkin use **Add stage…** to
+     add a **reviewer** stage manually, passing the PR URL in its prompt (custom
+     prompt source) so the reviewer reviews that PR directly.
+
+  This keeps the review step in the normal workflow without depending on the
+  broken auto `open-pr` stage.
 
 ## Keyboard shortcuts
 
