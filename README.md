@@ -8,21 +8,35 @@ cost panels.
 
 ## Quick start
 
+One-time setup:
+
 ```bash
 git clone git@github.com:pedro-miguel-ferreira/nap-pro.git ~/src/nap-pro
 cd ~/src/nap-pro
 npm install
-npm run build
 npm run build:cli
-npm link            # exposes `nap-pro` on $PATH
+npm link            # exposes `nap-pro` on $PATH (for the CLI + per-project flows)
+```
 
-# Bootstrap a project
+Launch the app — the usual way:
+
+```bash
+cd ~/src/nap-pro && npm start   # builds, then opens Electron on the landing screen
+```
+
+From the landing screen you open (or create) a project. To bootstrap a project
+from the command line instead:
+
+```bash
 mkdir ~/my-project && cd ~/my-project
 git init && git commit --allow-empty -m init
 nap-pro init --template raft-viz   # or: --list-templates / no template
-nap-pro open                       # launches the app (walks up to find .nap/)
+nap-pro open                       # launches the app on this project (walks up to find .nap/)
+```
 
-# Or with hot-reload for development
+For development with hot-reload, point dev mode at a project:
+
+```bash
 cd ~/src/nap-pro && NAP_CWD=~/my-project npm run dev
 ```
 
