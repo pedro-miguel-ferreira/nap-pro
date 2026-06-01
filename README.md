@@ -40,6 +40,45 @@ For development with hot-reload, point dev mode at a project:
 cd ~/src/nap-pro && NAP_CWD=~/my-project npm run dev
 ```
 
+## Picking a project (the landing screen)
+
+`npm start` opens on the landing screen, which lists recent projects and has two
+buttons:
+
+- **Open existing project…** — opens a folder picker. Pick the **project folder
+  itself** (the directory that contains a `.nap/` dir). On success the app
+  relaunches pointed at that folder.
+- **New project…** — opens a small wizard with two fields:
+  - **Parent directory** (via *Browse…*) — the folder you pick here is *not* the
+    project. It's the **parent** the project is created inside.
+  - **Project name** — alphanumeric (`- _ .` allowed).
+
+  The project is created at **`<parent directory>/<name>`**. That folder becomes
+  the project root: nap-pro `git init`s it with an empty `init` commit and
+  scaffolds `.nap/` inside it. So the folder you end up with **is** the project
+  folder *and* the git repo root — your agents' work, napkins, roles, and
+  workflows all live under its `.nap/`.
+
+### How the project folder relates to worktrees
+
+The project folder is the git repo agents work in by default. When a napkin opts
+into a **worktree**, nap-pro does *not* create it inside the project — it creates
+a **sibling** directory:
+
+```
+<parent>/
+  my-project/                     ← the project folder (git repo root, has .nap/)
+  my-project-worktrees/           ← sibling, holds per-napkin worktrees
+    0100-feature/                 ← worktree for napkin 0100, on branch nap-pro/0100-feature
+```
+
+So the folder you pick/create is the **mainline** checkout; each worktree is an
+isolated checkout of the same repo on its own `nap-pro/<slug>` branch, kept
+outside the project dir so worktrees never show up in the project's own git
+status. The `git init` + empty commit the wizard performs exists precisely so
+`git worktree add` works later. (If you *open* an existing folder that isn't a
+git repo, worktree creation for its napkins will fail until you `git init` it.)
+
 ## What it does
 
 You and an AI architect brainstorm ideas into **napkins** — compressed bullet
@@ -276,6 +315,22 @@ nap-pro permission-response [--list] --agent <id> --decision allow|deny [--messa
 - **Worktree** — per-napkin git checkout at `<project>-worktrees/<slug>`. Branch `nap-pro/<slug>`.
 - **Consultation** — an `ask` Q&A exchange persisted as `.q.md` / `.a.md` files under the napkin.
 - **Marker files** — source of truth, no database.
+
+## Known issues
+
+- **Open PR does not work yet (still to be fixed).** Workflows can include an
+  `open-pr` stage — a synthetic stage the runner handles inline, meant to
+  `git push -u origin nap-pro/<slug>` the napkin's worktree branch and open a
+  draft PR with `gh pr create --draft` (napkin doc as the body). The runner also
+  auto-inserts one before reviewer stages, and there's a legacy path that pokes
+  the architect to do it via its Bash tool. **This flow is currently broken** —
+  don't rely on it to create PRs. For now, push the branch and open the PR
+  manually:
+  ```bash
+  cd <project>-worktrees/<slug>
+  git push -u origin nap-pro/<slug>
+  gh pr create --draft --base main --head nap-pro/<slug>
+  ```
 
 ## Keyboard shortcuts
 
