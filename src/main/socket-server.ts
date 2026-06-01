@@ -60,7 +60,17 @@ export async function startSocketServer(
 
   return new Promise<void>((resolve, reject) => {
     server!.on('error', reject);
-    server!.listen(socketPath, () => resolve());
+    server!.listen(socketPath, () => {
+      // Lock the socket file to the owning user. Default Unix socket modes
+      // can let other users connect; this ensures only the same uid can
+      // talk to nap-pro's permission flow.
+      try {
+        fs.chmodSync(socketPath, 0o700);
+      } catch {
+        // Best-effort — proceed even if chmod fails (rare on tmpfs etc.)
+      }
+      resolve();
+    });
   });
 }
 

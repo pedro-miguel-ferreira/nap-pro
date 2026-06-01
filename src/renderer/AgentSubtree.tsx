@@ -36,6 +36,7 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
   const style = dotStyle({
     role: agent.role,
     running: agent.running,
+    paused: agent.paused,
     done: agent.done,
     exited: agent.exited,
     archived: agent.archived,
@@ -43,6 +44,7 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
 
   const hollow = style.shape === 'hollow';
   const dashed = style.shape === 'dashed-check';
+  const paused = style.shape === 'paused';
   const actualSize = hollow ? size - 1 : size;
   const clickable = agent.started || agent.archived;
 
@@ -64,8 +66,8 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
         borderRadius: '50%',
         boxSizing: 'content-box',
         flexShrink: 0,
-        backgroundColor: hollow || dashed ? 'transparent' : style.color,
-        border: `2px ${dashed ? 'dashed' : 'solid'} ${hollow || dashed ? style.color : 'transparent'}`,
+        backgroundColor: hollow || dashed || paused ? 'transparent' : style.color,
+        border: `2px ${dashed ? 'dashed' : 'solid'} ${hollow || dashed || paused ? style.color : 'transparent'}`,
         marginRight: 4,
         verticalAlign: 'middle',
         cursor: clickable ? 'pointer' : 'default',
@@ -75,6 +77,12 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
       {dashed && (
         <svg width="6" height="6" viewBox="0 0 6 6">
           <path d="M1 3.2 L2.3 4.5 L5 1.5" stroke={style.color} strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+      {paused && (
+        <svg width="6" height="6" viewBox="0 0 6 6">
+          <rect x="1.4" y="1" width="1" height="4" fill={style.color} />
+          <rect x="3.6" y="1" width="1" height="4" fill={style.color} />
         </svg>
       )}
     </span>
@@ -182,11 +190,13 @@ export function AgentSubtree({
             ? 'archived'
             : agent.exited
               ? 'exited'
-              : agent.done
-                ? 'done'
-                : agent.running
-                  ? 'run'
-                  : 'wait'}
+              : agent.paused
+                ? 'paused'
+                : agent.done
+                  ? 'done'
+                  : agent.running
+                    ? 'run'
+                    : 'wait'}
         </span>
       </div>
 

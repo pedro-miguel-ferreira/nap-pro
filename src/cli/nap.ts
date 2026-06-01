@@ -9,6 +9,11 @@ import * as crypto from 'crypto';
 import { NdjsonParser, serialize } from '../shared/ndjson';
 import { findSocketPath, findProjectRoot, isSocketAlive } from '../shared/constants';
 import { parseKey, parseSeq } from '../main/key-parser';
+import {
+  scaffoldProject,
+  findTemplatesDir as findTemplatesDirShared,
+  copyDirRecursive,
+} from '../main/project-init';
 
 // --- Help text ---
 
@@ -30,10 +35,14 @@ Commands:
   done                          Mark current session as done
   nap <name> [--timeout <s>]    Wait for agent to complete
   poke <name> <message>         Send input to agent terminal
+  ask <name> <question>         Ask another agent a question (writes Q+A to napkin's consultations/)
   key <name> <key> [--seq]     Send raw keypress to agent pty
   peek <name>                   Focus agent terminal in UI
   log <name>                    Dump terminal scrollback
   stop <name>                   Stop an agent
+  pause <name>                  SIGSTOP an agent's pty (lossless freeze)
+  resume <name>                 SIGCONT a paused agent
+  worktree create|remove|list|path  Per-napkin git worktree management
   import-agents <nepic-dir>     Import existing agent dirs as archived
   hook permission-request       CC PermissionRequest hook handler
   permission-response           Resolve a pending permission request
@@ -185,6 +194,34 @@ Stop an agent's process.
 
   name              Agent name
   --help            Show this help
+`,
+  pause: `Usage: nap-pro pause <name>
+
+SIGSTOP an agent's pty process group. Process freezes in place — no
+state loss, no token spend, no work consumed. Use \`resume\` to continue.
+
+  name              Agent name
+  --help            Show this help
+`,
+  resume: `Usage: nap-pro resume <name>
+
+SIGCONT a paused agent. Inverse of \`pause\`.
+
+  name              Agent name
+  --help            Show this help
+`,
+  worktree: `Usage: nap-pro worktree <subcommand> [args]
+
+  nap-pro worktree create <napkin-slug> [--base <branch>]
+                                              Create a git worktree for a napkin.
+                                              --base defaults to the repo's default
+                                              branch (origin/HEAD → main → master).
+  nap-pro worktree remove <napkin-slug> [--force]   Remove a worktree (refuses if dirty unless --force)
+  nap-pro worktree list                      List all nap-pro-managed worktrees
+  nap-pro worktree path <napkin-slug>        Print the worktree path
+
+Worktrees branch as \`nap-pro/<slug>\` and live at \`<project>-worktrees/<slug>\`.
+Once set, agents in that napkin spawn with that worktree as their cwd.
 `,
   'import-agents': `Usage: nap-pro import-agents <nepic-dir>
 
@@ -353,27 +390,9 @@ function sleep(ms: number): Promise<void> {
 
 // --- Template helpers ---
 
+/** Wraps the shared resolver so existing CLI call sites stay arg-free. */
 function findTemplatesDir(): string {
-  // Built CLI: out/cli/cli/nap.js → ../../../src/templates
-  const fromBuilt = path.resolve(__dirname, '..', '..', '..', 'src', 'templates');
-  if (fs.existsSync(fromBuilt)) return fromBuilt;
-  // Running from source: src/cli/nap.ts → ../templates
-  const fromSource = path.resolve(__dirname, '..', 'templates');
-  if (fs.existsSync(fromSource)) return fromSource;
-  throw new Error('templates directory not found');
-}
-
-function copyDirRecursive(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
+  return findTemplatesDirShared(__dirname);
 }
 
 // --- Setup functions (shared between init and setup commands) ---
@@ -627,77 +646,17 @@ async function main(): Promise<void> {
       }
 
       const cwd = process.cwd();
-      const napDir = path.join(cwd, '.nap');
-
-      if (fs.existsSync(napDir)) {
-        process.stderr.write('Project already initialized. Run `nap-pro open` to launch.\n');
+      const scaffold = scaffoldProject({
+        cwd,
+        templatesDir,
+        useTemplatePrompt: !!flags['template'],
+      });
+      if (!scaffold.ok) {
+        process.stderr.write(`${scaffold.message ?? 'init failed'} Run \`nap-pro open\` to launch.\n`);
         process.exit(1);
       }
-
-      // Create .nap/ directory
-      fs.mkdirSync(napDir, { recursive: true });
-
-      // Copy 00-org/ from templates
-      copyDirRecursive(
-        path.join(templatesDir, '00-org'),
-        path.join(napDir, '00-org'),
-      );
-
-      // Create nepics/01-v1/ structure
+      const napDir = scaffold.napDir!;
       const nepicDir = path.join(napDir, 'nepics', '01-v1');
-
-      // Create empty dirs
-      fs.mkdirSync(path.join(nepicDir, '10-docs'), { recursive: true });
-      fs.mkdirSync(path.join(nepicDir, '30-napkins'), { recursive: true });
-
-      // Create architect stub
-      const architectDir = path.join(nepicDir, '20-architects', '001-architect');
-      fs.mkdirSync(architectDir, { recursive: true });
-
-      const ccSessionUuid = crypto.randomUUID();
-      const now = Date.now();
-
-      const architectMarker = {
-        cc_session_uuid: ccSessionUuid,
-        role: 'architect',
-        name: '001-architect',
-        nepic: '01-v1',
-        created_at: now,
-        started: false,
-      };
-
-      fs.writeFileSync(
-        path.join(architectDir, '.agent.nap.json'),
-        JSON.stringify(architectMarker, null, 2),
-      );
-
-      // Copy architect prompt.md — use template-specific version when --template is set
-      const promptFileName = flags['template'] ? 'prompt-template.md' : 'prompt.md';
-      const promptTemplatePath = path.join(
-        templatesDir,
-        'nepic',
-        '20-architects',
-        '001-architect',
-        promptFileName,
-      );
-      if (fs.existsSync(promptTemplatePath)) {
-        fs.copyFileSync(
-          promptTemplatePath,
-          path.join(architectDir, 'prompt.md'),
-        );
-      }
-
-      // Create .gitignore
-      fs.writeFileSync(
-        path.join(napDir, '.gitignore'),
-        'sock\nui-state.json\n',
-      );
-
-      // Create ui-state.json
-      fs.writeFileSync(
-        path.join(napDir, 'ui-state.json'),
-        JSON.stringify({ activeNepicId: '01-v1' }, null, 2),
-      );
 
       // Handle --add-skills
       if (flags['add-skills']) {
@@ -996,6 +955,7 @@ async function main(): Promise<void> {
             role: flags['role'] as string,
             nepicId: (flags['nepic'] as string) || undefined,
             parentId: (flags['parent'] as string) || process.env['NAP_SESSION_ID'] || undefined,
+            model: (flags['model'] as string) || null,
           });
           if (res['error']) {
             process.stderr.write(String(res['message']) + '\n');
@@ -1016,6 +976,7 @@ async function main(): Promise<void> {
             name: args[1],
             nepicId: (flags['nepic'] as string) || undefined,
             parentId: (flags['parent'] as string) || process.env['NAP_SESSION_ID'] || undefined,
+            model: (flags['model'] as string) || null,
           });
           if (res['error']) {
             process.stderr.write(String(res['message']) + '\n');
@@ -1250,6 +1211,67 @@ async function main(): Promise<void> {
       break;
     }
 
+    case 'ask': {
+      // Agent-to-agent Q&A. Writes the question to a `<napkin>/consultations/<ts>-<from>-to-<to>.q.md`
+      // file, enqueues a structured message into the target's PTY pointing at
+      // the question + answer file paths. The target reads the question, writes
+      // its answer to the `.a.md` file, then continues idling. The asker can
+      // either poll the .a.md file or use `--wait <secs>` to block until it appears.
+      if (!args[0] || !args[1]) {
+        process.stderr.write(
+          'Usage: nap-pro ask <agent-name> <question> [--wait <secs>]\n\n' +
+          '  --wait <secs>   Block until the answer file is written (default: 300, 0 = no wait)\n',
+        );
+        process.exit(1);
+      }
+      const target = args[0];
+      const question = args.slice(1).join(' ');
+      const waitFlag = flags['wait'];
+      const waitSecs = waitFlag === undefined ? 300 : Number(waitFlag);
+      if (Number.isNaN(waitSecs) || waitSecs < 0) {
+        process.stderr.write('--wait must be a non-negative number\n');
+        process.exit(1);
+      }
+      const sock = resolveSocketOrDie();
+      const askerSessionId = process.env['NAP_SESSION_ID'] || null;
+      const res = await send(sock, {
+        type: 'ask',
+        id: requestId++,
+        target,
+        question,
+        askerSessionId,
+      });
+      if (res['error']) {
+        process.stderr.write(String(res['message']) + '\n');
+        process.exit(1);
+      }
+      const answerPath = String(res['answerPath']);
+      const questionPath = String(res['questionPath']);
+      process.stdout.write(`Asked ${target}.\n  Question: ${questionPath}\n  Answer:   ${answerPath}\n`);
+
+      if (waitSecs === 0) break;
+
+      process.stdout.write(`Waiting up to ${waitSecs}s for answer...\n`);
+      const start = Date.now();
+      const deadline = start + waitSecs * 1000;
+      while (Date.now() < deadline) {
+        if (fs.existsSync(answerPath)) {
+          const body = fs.readFileSync(answerPath, 'utf8').trim();
+          if (body.length > 0) {
+            process.stdout.write(`\n--- Answer from ${target} ---\n${body}\n`);
+            break;
+          }
+        }
+        // 1s poll — answers are LLM-paced, sub-second precision is wasted.
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      if (!fs.existsSync(answerPath) || fs.readFileSync(answerPath, 'utf8').trim().length === 0) {
+        process.stderr.write(`No answer received within ${waitSecs}s. The question file is still at ${questionPath} — the target may answer later.\n`);
+        process.exit(2);
+      }
+      break;
+    }
+
     case 'key': {
       const seqValue = flags['seq'];
       if (!args[0] || (!args[1] && !seqValue)) {
@@ -1319,6 +1341,101 @@ async function main(): Promise<void> {
       const res = await send(sock, { type: 'stop', id: requestId++, name: args[0] });
       if (res['error']) {
         process.stderr.write(String(res['message']) + '\n');
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'pause': {
+      if (!args[0]) {
+        process.stderr.write('Usage: nap-pro pause <name>\n');
+        process.exit(1);
+      }
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, { type: 'pause', id: requestId++, name: args[0] });
+      if (res['error']) {
+        process.stderr.write(String(res['message']) + '\n');
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'resume': {
+      if (!args[0]) {
+        process.stderr.write('Usage: nap-pro resume <name>\n');
+        process.exit(1);
+      }
+      const sock = resolveSocketOrDie();
+      const res = await send(sock, { type: 'resume', id: requestId++, name: args[0] });
+      if (res['error']) {
+        process.stderr.write(String(res['message']) + '\n');
+        process.exit(1);
+      }
+      break;
+    }
+
+    case 'worktree': {
+      const subcommand = args[0];
+      if (!subcommand || subcommand === '--help') {
+        process.stderr.write(COMMAND_HELP['worktree']);
+        process.exit(subcommand ? 0 : 1);
+      }
+      const sock = resolveSocketOrDie();
+
+      if (subcommand === 'create') {
+        if (!args[1]) {
+          process.stderr.write('Usage: nap-pro worktree create <napkin-slug> [--base <branch>]\n');
+          process.exit(1);
+        }
+        const res = await send(sock, {
+          type: 'create-worktree',
+          id: requestId++,
+          napkinSlug: args[1],
+          baseBranch: (flags['base'] as string) || undefined,
+        });
+        if (res['error']) {
+          process.stderr.write(String(res['message']) + '\n');
+          process.exit(1);
+        }
+        process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+      } else if (subcommand === 'remove') {
+        if (!args[1]) {
+          process.stderr.write('Usage: nap-pro worktree remove <napkin-slug> [--force]\n');
+          process.exit(1);
+        }
+        const res = await send(sock, {
+          type: 'remove-worktree',
+          id: requestId++,
+          napkinSlug: args[1],
+          force: !!flags['force'],
+        });
+        if (res['error']) {
+          process.stderr.write(String(res['message']) + '\n');
+          process.exit(1);
+        }
+      } else if (subcommand === 'list') {
+        const res = await send(sock, { type: 'list-worktrees', id: requestId++ });
+        if (res['error']) {
+          process.stderr.write(String(res['message']) + '\n');
+          process.exit(1);
+        }
+        process.stdout.write(JSON.stringify(res, null, 2) + '\n');
+      } else if (subcommand === 'path') {
+        if (!args[1]) {
+          process.stderr.write('Usage: nap-pro worktree path <napkin-slug>\n');
+          process.exit(1);
+        }
+        const res = await send(sock, { type: 'list-worktrees', id: requestId++ });
+        const trees = (res['worktrees'] as Array<{ slug: string; path: string }>) ?? [];
+        const match = trees.find((t) => t.slug === args[1]);
+        if (!match) {
+          process.stderr.write(`no worktree for napkin '${args[1]}'\n`);
+          process.exit(1);
+        }
+        process.stdout.write(match.path + '\n');
+      } else {
+        process.stderr.write(`unknown worktree subcommand: ${subcommand}\n`);
+        process.stderr.write(COMMAND_HELP['worktree']);
         process.exit(1);
       }
       break;

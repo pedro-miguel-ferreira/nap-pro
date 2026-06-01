@@ -1,6 +1,7 @@
 import type { NapModel } from './model';
 import type { PtySpawner } from './pty-spawner';
 import { computeResumeActions } from './resume';
+import { isResumeMissingSession } from './resume-detection';
 
 /** Threshold for fast-exit detection (same as v2 main.ts:191) */
 const RESUME_FAIL_THRESHOLD_MS = 5000;
@@ -31,8 +32,9 @@ export async function startAgents(model: NapModel, ptySpawner: PtySpawner): Prom
 
     ptySpawner.spawn({
       id: decision.agentId,
-      command: decision.command!,
-      cwd: '',
+      file: decision.file!,
+      args: decision.args!,
+      cwd: model.getAgentCwd(decision.agentId),
     });
 
     // Register exit handler — fires when pty dies on its own (NOT on quit)
@@ -40,15 +42,16 @@ export async function startAgents(model: NapModel, ptySpawner: PtySpawner): Prom
       const spawnTime = resumeSpawnTimes.get(decision.agentId);
       resumeSpawnTimes.delete(decision.agentId);
 
-      // Resume failure detection: fast exit + was --resume + "No conversation found"
+      // Resume failure detection: fast exit + was --resume + known "session gone"
+      // wording. Centralized in isResumeMissingSession so a CC rewording is a
+      // one-line fix instead of two silent regressions.
       if (
         decision.action === 'resume' &&
         spawnTime &&
         (Date.now() - spawnTime) < RESUME_FAIL_THRESHOLD_MS
       ) {
-        // Check output buffer for the dead session message
         const output = (ptySpawner as any).getOutputBuffer?.(decision.agentId) ?? '';
-        if (output.includes('No conversation found')) {
+        if (isResumeMissingSession(output)) {
           await model.setAgentArchived(decision.agentId);
           return;
         }

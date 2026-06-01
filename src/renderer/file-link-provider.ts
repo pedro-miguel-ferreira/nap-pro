@@ -21,7 +21,8 @@ function isUrl(text: string, startIndex: number): boolean {
   return /^https?:\/\//.test(token);
 }
 
-function extractPathAndLocation(match: string): { path: string; line?: number; col?: number } {
+/** Exported for reuse — strips optional `:line:col` suffix from a matched path. */
+export function extractPathAndLocation(match: string): { path: string; line?: number; col?: number } {
   const lineColMatch = match.match(/^(.+?):(\d+)(?::(\d+))?$/);
   if (lineColMatch) {
     return {

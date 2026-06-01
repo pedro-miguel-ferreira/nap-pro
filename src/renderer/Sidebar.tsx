@@ -4,6 +4,21 @@ import type { CardViewMode } from './store';
 import type { NapkinState, AgentState, NapkinStatus, Entry, FileEntry, DirEntry } from '../shared/bridge-types';
 import { dotStyle, roleColor } from '../shared/dot-style';
 import { AgentSubtree, buildAgentChildren } from './AgentSubtree';
+import { NapkinContextMenu, type ContextMenuPosition } from './NapkinContextMenu';
+
+// ── Toolbar styles ──
+
+const toolbarBtnStyle: React.CSSProperties = {
+  flex: 1,
+  background: 'transparent',
+  border: '1px solid #3c3c3c',
+  color: '#9ca3af',
+  borderRadius: 3,
+  padding: '4px 0',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: 11,
+};
 
 // ── Phase colors ──
 
@@ -23,6 +38,7 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
   const style = dotStyle({
     role: agent.role,
     running: agent.running,
+    paused: agent.paused,
     done: agent.done,
     exited: agent.exited,
     archived: agent.archived,
@@ -30,6 +46,7 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
 
   const hollow = style.shape === 'hollow';
   const dashed = style.shape === 'dashed-check';
+  const paused = style.shape === 'paused';
   const actualSize = hollow ? size - 1 : size;
   const clickable = agent.started || agent.archived;
 
@@ -52,8 +69,8 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
         borderRadius: '50%',
         boxSizing: 'content-box',
         flexShrink: 0,
-        backgroundColor: hollow || dashed ? 'transparent' : style.color,
-        border: `2px ${dashed ? 'dashed' : 'solid'} ${hollow || dashed ? style.color : 'transparent'}`,
+        backgroundColor: hollow || dashed || paused ? 'transparent' : style.color,
+        border: `2px ${dashed ? 'dashed' : 'solid'} ${hollow || dashed || paused ? style.color : 'transparent'}`,
         marginRight: 4,
         verticalAlign: 'middle',
         cursor: clickable ? 'pointer' : 'default',
@@ -64,6 +81,12 @@ function AgentDot({ agent, size = 8 }: { agent: AgentState; size?: number }) {
       {dashed && (
         <svg width="6" height="6" viewBox="0 0 6 6">
           <path d="M1 3.2 L2.3 4.5 L5 1.5" stroke={style.color} strokeWidth="1.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+      {paused && (
+        <svg width="6" height="6" viewBox="0 0 6 6">
+          <rect x="1.4" y="1" width="1" height="4" fill={style.color} />
+          <rect x="3.6" y="1" width="1" height="4" fill={style.color} />
         </svg>
       )}
     </span>
@@ -94,7 +117,15 @@ function FileRow({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        window.electronAPI?.openFilePath(file.absPath);
+        // .md files open in the in-app viewer; everything else falls through
+        // to the OS default app (Cursor, VS Code, image viewer, …). The
+        // dedicated "external open" arrow icon below always uses the OS
+        // default, regardless of file type.
+        if (file.absPath.endsWith('.md')) {
+          useNapStore.getState().openMarkdownPanel(file.absPath);
+        } else {
+          window.electronAPI?.openFilePath(file.absPath);
+        }
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
@@ -240,6 +271,8 @@ function NapkinCard({
   const setActiveTerminal = useNapStore((s) => s.setActiveTerminal);
   const expandCard = useNapStore((s) => s.expandCard);
   const showExtended = isFocused && viewMode === 'extended';
+  const [menuPos, setMenuPos] = useState<ContextMenuPosition | null>(null);
+  const stale = useNapStore((s) => s.staleNapkins[napkin.slug]);
 
   const clickTarget = napkin.agents.find((a) => a.running)
     || napkin.agents.find((a) => a.started);
@@ -269,6 +302,11 @@ function NapkinCard({
       {/* Header — collapsed view (always visible) */}
       <div
         onClick={handleCardClick}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setMenuPos({ x: e.clientX, y: e.clientY });
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -289,6 +327,27 @@ function NapkinCard({
         >
           {napkin.slug}
         </span>
+        {napkin.worktreePath && (
+          <span
+            title={`worktree: ${napkin.worktreePath}`}
+            style={{ color: '#a855f7', fontSize: 11, flexShrink: 0 }}
+          >
+            ↳wt
+          </span>
+        )}
+        {stale && (
+          <span
+            title={`Reference docs changed since last "${stale.workflowName}" run:\n${stale.changedFiles.join('\n')}\n\nRight-click → Re-run last workflow`}
+            style={{
+              color: '#fbbf24',
+              fontSize: 11,
+              flexShrink: 0,
+              animation: 'blink 1.5s step-end infinite',
+            }}
+          >
+            ↻
+          </span>
+        )}
         <span style={{ display: 'flex', gap: 3, flexShrink: 0, margin: '0 2px' }}>
           {napkin.agents.map((a) => (
             <AgentDot key={a.name} agent={a} />
@@ -298,6 +357,14 @@ function NapkinCard({
           {napkin.status}
         </span>
       </div>
+
+      {menuPos && (
+        <NapkinContextMenu
+          napkin={napkin}
+          position={menuPos}
+          onClose={() => setMenuPos(null)}
+        />
+      )}
 
       {/* Body — focused/extended view */}
       {isFocused && (
@@ -516,6 +583,11 @@ export function Sidebar() {
   const setBrowserFilter = useNapStore((s) => s.setBrowserFilter);
   const setBrowserFilterVisible = useNapStore((s) => s.setBrowserFilterVisible);
   const extendCard = useNapStore((s) => s.extendCard);
+  const openRoleEditor = useNapStore((s) => s.openRoleEditor);
+  const openWorkflowSetup = useNapStore((s) => s.openWorkflowSetup);
+  const openWorkflowDashboard = useNapStore((s) => s.openWorkflowDashboard);
+  const openWorkflowFromSpec = useNapStore((s) => s.openWorkflowFromSpec);
+  const workflowRuns = useNapStore((s) => s.workflowRuns);
   const filterInputRef = useRef<HTMLInputElement>(null);
 
   // ── Resizable width ──
@@ -624,6 +696,63 @@ export function Sidebar() {
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#007acc')}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
       />
+      {/* Toolbar — manage Roles / Workflows */}
+      <div
+        style={{
+          padding: '8px 12px 4px 12px',
+          display: 'flex',
+          gap: 6,
+          borderBottom: '1px solid #2d2d2d',
+        }}
+      >
+        <button
+          onClick={() => openRoleEditor()}
+          style={toolbarBtnStyle}
+          title="Manage roles (.nap/00-org/40-roles/)"
+        >
+          Roles
+        </button>
+        <button
+          onClick={() => openWorkflowSetup(null)}
+          style={toolbarBtnStyle}
+          title="Manage workflows (.nap/workflows/)"
+        >
+          Workflows
+        </button>
+        <button
+          onClick={() => openWorkflowFromSpec()}
+          style={{ ...toolbarBtnStyle, borderColor: '#3b82f6', color: '#7dd3fc' }}
+          title="Run a workflow from a spec doc — creates a new napkin and lets the scope agent populate it"
+        >
+          + From spec
+        </button>
+        <button
+          onClick={() => openWorkflowDashboard()}
+          style={(() => {
+            const active = workflowRuns.filter((r) => r.status === 'running').length;
+            return {
+              ...toolbarBtnStyle,
+              borderColor: active > 0 ? '#f59e0b' : '#3c3c3c',
+              color: active > 0 ? '#fbbf24' : '#9ca3af',
+            };
+          })()}
+          title="Workflow run dashboard"
+        >
+          Runs
+          {(() => {
+            const active = workflowRuns.filter((r) => r.status === 'running').length;
+            return active > 0 ? ` · ${active}` : '';
+          })()}
+        </button>
+        <button
+          onClick={() => window.electronAPI?.revealProjectPath?.()}
+          style={toolbarBtnStyle}
+          title="Reveal .nap/nepics/ — all agent-produced files (specs, stories, prompts, responses) live there"
+        >
+          Files
+        </button>
+      </div>
+
       {/* Filter bar */}
       <div style={{ padding: '10px 12px', borderBottom: '1px solid #3c3c3c' }}>
         <input
@@ -673,6 +802,37 @@ export function Sidebar() {
             viewMode={cardViewMode}
           />
         ))}
+
+        {/* + Spawn architect — on-demand replacement for the auto-architect
+            that init used to create. Visible whether or not architects exist,
+            so users can spin one up for an ad-hoc brainstorm at any time. */}
+        <div
+          style={{
+            padding: architects.length === 0 ? '8px 12px' : '4px 12px 8px 12px',
+            display: 'flex',
+            justifyContent: architects.length === 0 ? 'flex-start' : 'center',
+          }}
+        >
+          <button
+            onClick={async () => {
+              const res = await window.electronAPI?.spawnArchitect?.();
+              if (res?.error) {
+                // eslint-disable-next-line no-alert
+                alert(`Spawn failed: ${res.message ?? 'unknown error'}`);
+              }
+            }}
+            style={{
+              ...toolbarBtnStyle,
+              color: '#7dd3fc',
+              borderColor: '#3b82f6',
+              width: architects.length === 0 ? 'auto' : '100%',
+              fontSize: 11,
+            }}
+            title="Spawn a fresh project-level architect agent — useful for brainstorming, codebase exploration, or ad-hoc tasks. Starts immediately."
+          >
+            + Spawn architect
+          </button>
+        </div>
 
         {/* Separator */}
         {architects.length > 0 && (

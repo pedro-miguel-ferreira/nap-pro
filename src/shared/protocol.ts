@@ -24,6 +24,18 @@ export interface StopRequest {
   name: string;
 }
 
+export interface PauseRequest {
+  type: 'pause';
+  id: number;
+  name: string;
+}
+
+export interface ResumeRequest {
+  type: 'resume';
+  id: number;
+  name: string;
+}
+
 export interface PokeRequest {
   type: 'poke';
   id: number;
@@ -59,6 +71,7 @@ export interface CreateAgentRequest {
   role: string;
   nepicId?: string;
   parentId?: string;
+  model?: string | null;
 }
 
 export interface CreateArchitectRequest {
@@ -67,6 +80,7 @@ export interface CreateArchitectRequest {
   name: string;
   nepicId?: string;
   parentId?: string;
+  model?: string | null;
 }
 
 export interface CreateNepicRequest {
@@ -81,6 +95,25 @@ export interface SetStatusRequest {
   id: number;
   napkinSlug: string;
   status: string;
+}
+
+export interface CreateWorktreeRequest {
+  type: 'create-worktree';
+  id: number;
+  napkinSlug: string;
+  baseBranch?: string;
+}
+
+export interface RemoveWorktreeRequest {
+  type: 'remove-worktree';
+  id: number;
+  napkinSlug: string;
+  force?: boolean;
+}
+
+export interface ListWorktreesRequest {
+  type: 'list-worktrees';
+  id: number;
 }
 
 export interface StatusInspectRequest {
@@ -123,6 +156,8 @@ export type SocketRequest =
   | PsRequest
   | PeekRequest
   | StopRequest
+  | PauseRequest
+  | ResumeRequest
   | PokeRequest
   | DoneRequest
   | LogRequest
@@ -131,6 +166,9 @@ export type SocketRequest =
   | CreateArchitectRequest
   | CreateNepicRequest
   | SetStatusRequest
+  | CreateWorktreeRequest
+  | RemoveWorktreeRequest
+  | ListWorktreesRequest
   | StatusInspectRequest
   | KeyRequest
   | NapWaitRequest

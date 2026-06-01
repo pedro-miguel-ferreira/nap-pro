@@ -140,7 +140,9 @@ describe('II. Resume logic — Path A', () => {
     expect(actions.find(a => a.agentId === 'archived')!.action).toBe('skip');
     expect(actions.find(a => a.agentId === 'alive')!.action).toBe('resume');
     expect(actions.find(a => a.agentId === 'exited')!.action).toBe('skip');
-    expect(actions.find(a => a.agentId === 'fresh')!.action).toBe('fresh');
+    // Never-started agents now stay dormant on launch (no-auto-boot); user
+    // starts them explicitly via right-click → Start.
+    expect(actions.find(a => a.agentId === 'fresh')!.action).toBe('skip');
   });
 
   it('T-0620-13: archived architect also skipped', () => {
@@ -167,7 +169,7 @@ describe('III. Resume failure detection — Path B', () => {
     // uuid-ta was started+!exited → gets --resume
     const resumeSpawn = pty.spawned.find(s => s.id === 'uuid-ta');
     expect(resumeSpawn).toBeDefined();
-    expect(resumeSpawn!.command).toContain('--resume');
+    expect(resumeSpawn!.args.join(' ')).toContain('--resume');
 
     // Simulate output and fast exit
     pty.simulateOutput('uuid-ta', 'No conversation found with session ID: uuid-ta');
@@ -215,10 +217,13 @@ describe('III. Resume failure detection — Path B', () => {
     const pty = new FakePtySpawner();
     await startAgents(model, pty);
 
-    // uuid-fresh was !started → gets --session-id (fresh start)
+    // uuid-fresh stays dormant on launch (no-auto-boot). Simulate the user
+    // clicking right-click → Start, which goes through model.startAgentById
+    // and uses --session-id (fresh, not --resume).
+    await model.startAgentById('uuid-fresh', 'read prompt.md', pty);
     const freshSpawn = pty.spawned.find(s => s.id === 'uuid-fresh');
     expect(freshSpawn).toBeDefined();
-    expect(freshSpawn!.command).toContain('--session-id');
+    expect(freshSpawn!.args.join(' ')).toContain('--session-id');
 
     // Simulate fast exit
     pty.simulateOutput('uuid-fresh', 'No conversation found');
@@ -269,10 +274,10 @@ describe('IV. Successor flow', () => {
     // Check the pty was spawned with new UUID
     const spawn = pty.spawned.find(s => s.id === newId);
     expect(spawn).toBeDefined();
-    expect(spawn!.command).toContain('--session-id');
-    expect(spawn!.command).toContain(newId!);
+    expect(spawn!.args.join(' ')).toContain('--session-id');
+    expect(spawn!.args.join(' ')).toContain(newId!);
     // Should include successor prompt content
-    expect(spawn!.command).toContain('successor maintainer');
+    expect(spawn!.args.join(' ')).toContain('successor maintainer');
   });
 
   it('T-0620-33: successor prompt content — all required context', async () => {

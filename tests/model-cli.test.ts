@@ -120,8 +120,9 @@ describe('NapModel — new CLI methods', () => {
     expect(agent.id).toBe('uuid-fresh');
     expect(ptySpawner.spawned).toHaveLength(1);
     expect(ptySpawner.spawned[0].id).toBe('uuid-fresh');
-    expect(ptySpawner.spawned[0].command).toContain('claude --verbose');
-    expect(ptySpawner.spawned[0].command).toContain('read prompt.md');
+    expect(ptySpawner.spawned[0].file).toBe('claude');
+    expect(ptySpawner.spawned[0].args).toContain('--verbose');
+    expect(ptySpawner.spawned[0].args.join(' ')).toContain('read prompt.md');
 
     // Check model state
     const found = model.getAllAgents().find(a => a.id === 'uuid-fresh');

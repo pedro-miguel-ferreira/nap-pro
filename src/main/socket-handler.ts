@@ -1,4 +1,6 @@
 import type * as net from 'net';
+import * as fsPromises from 'fs/promises';
+import * as path from 'path';
 import type { NapModel } from './model';
 import type { PtySpawner } from './pty-spawner';
 import type { NapkinStatus } from '../shared/bridge-types';
@@ -6,6 +8,7 @@ import { resolveByName } from './name-resolver';
 import { enqueue } from './message-queue';
 import { LONG_LIVED } from './socket-server';
 import { serialize } from '../shared/ndjson';
+import { createWorktree, removeWorktree, listWorktrees } from './worktree-helpers';
 
 const VALID_PHASES = ['backlog', 'todo', 'doing', 'review', 'done', 'archived'] as const;
 
@@ -35,7 +38,31 @@ export function getPendingRegistry(): ReadonlyMap<string, PendingEntry> {
 export function createRequestHandler(
   model: NapModel,
   ptySpawner: PtySpawner,
+  activityLogger?: import('./activity-log').ActivityLogger,
+  projectCwd: string = process.cwd(),
 ): (msg: unknown, conn: net.Socket) => Promise<unknown> {
+  function emitActivity(
+    agentId: string,
+    type: 'permission-requested' | 'permission-allowed' | 'permission-denied',
+    text: string,
+    data?: Record<string, unknown>,
+  ): void {
+    if (!activityLogger) return;
+    const agent = model.getAllAgents().find((a) => a.id === agentId);
+    if (!agent) return;
+    activityLogger.emit(
+      {
+        ts: Date.now(),
+        type,
+        agentId: agent.id,
+        agentName: agent.name,
+        text,
+        ...(data ? { data } : {}),
+      },
+      agent.homePath,
+    );
+  }
+
   return async (msg: unknown, conn: net.Socket) => {
     const req = msg as Record<string, unknown>;
     const reqId = req.id as number;
@@ -56,7 +83,8 @@ export function createRequestHandler(
         const role = req.role as string;
         const nepicId = req.nepicId as string | undefined;
         const parentId = req.parentId as string | undefined;
-        const result = await model.createAgentStub(napkinSlug, name, role, nepicId, parentId);
+        const modelId = (req.model as string | null | undefined) ?? null;
+        const result = await model.createAgentStub(napkinSlug, name, role, nepicId, parentId, modelId);
         return { ...result };
       }
 
@@ -64,7 +92,8 @@ export function createRequestHandler(
         const name = req.name as string;
         const nepicId = req.nepicId as string | undefined;
         const parentId = req.parentId as string | undefined;
-        const result = await model.createArchitectStub(name, nepicId, parentId);
+        const modelId = (req.model as string | null | undefined) ?? null;
+        const result = await model.createArchitectStub(name, nepicId, parentId, modelId);
         return { ...result };
       }
 
@@ -102,6 +131,38 @@ export function createRequestHandler(
         return { id: reqId };
       }
 
+      case 'pause': {
+        const name = req.name as string;
+        const allAgents = model.getAllAgents();
+        const resolved = resolveByName(allAgents, name);
+        if (!resolved.ok) {
+          throw new Error(resolved.error);
+        }
+        const agent = resolved.agent;
+        if (!ptySpawner.isRunning(agent.id)) {
+          throw new Error(`agent '${agent.name}' is not running`);
+        }
+        const ok = ptySpawner.pause(agent.id);
+        if (ok) model.setAgentPaused(agent.id, true);
+        return { id: reqId, ok };
+      }
+
+      case 'resume': {
+        const name = req.name as string;
+        const allAgents = model.getAllAgents();
+        const resolved = resolveByName(allAgents, name);
+        if (!resolved.ok) {
+          throw new Error(resolved.error);
+        }
+        const agent = resolved.agent;
+        if (!ptySpawner.isRunning(agent.id)) {
+          throw new Error(`agent '${agent.name}' is not running`);
+        }
+        const ok = ptySpawner.resume(agent.id);
+        if (ok) model.setAgentPaused(agent.id, false);
+        return { id: reqId, ok };
+      }
+
       case 'set-status': {
         const napkinSlug = req.napkinSlug as string;
         const status = req.status as string;
@@ -112,6 +173,33 @@ export function createRequestHandler(
         }
         await model.setNapkinStatus(napkinSlug, status);
         return { id: reqId };
+      }
+
+      case 'create-worktree': {
+        const napkinSlug = req.napkinSlug as string;
+        const baseBranch = (req.baseBranch as string | undefined) || undefined;
+        const napkin = model.getNapkins().find((n) => n.slug === napkinSlug);
+        if (!napkin) throw new Error(`napkin '${napkinSlug}' not found`);
+        const result = await createWorktree(projectCwd, napkinSlug, { baseBranch });
+        if (!result.ok) throw new Error(result.error || 'failed to create worktree');
+        await model.setNapkinWorktree(napkinSlug, result.path!);
+        return { id: reqId, path: result.path, branch: result.branch };
+      }
+
+      case 'remove-worktree': {
+        const napkinSlug = req.napkinSlug as string;
+        const force = (req.force as boolean) ?? false;
+        const napkin = model.getNapkins().find((n) => n.slug === napkinSlug);
+        if (!napkin) throw new Error(`napkin '${napkinSlug}' not found`);
+        const result = await removeWorktree(projectCwd, napkinSlug, { force });
+        if (!result.ok) throw new Error(result.error || 'failed to remove worktree');
+        await model.setNapkinWorktree(napkinSlug, null);
+        return { id: reqId };
+      }
+
+      case 'list-worktrees': {
+        const trees = await listWorktrees(projectCwd);
+        return { id: reqId, worktrees: trees };
       }
 
       case 'status': {
@@ -136,6 +224,94 @@ export function createRequestHandler(
         }
         enqueue(resolved.agent.id, message, esc);
         return { id: reqId };
+      }
+
+      case 'ask': {
+        // Agent-to-agent Q&A.
+        //
+        // Writes a `<consultations-dir>/<ts>-<from-name>-to-<to-name>.q.md` file
+        // with the question, and enqueues a structured prompt into the target's
+        // PTY that points at both that file and the matching `.a.md` answer
+        // path. The target reads the question, writes its answer to the .a.md
+        // file, and continues idling. The asker (CLI) blocks on the .a.md file
+        // appearing (or returns immediately with --wait 0).
+        //
+        // Consultation files live under the asker's napkin if the asker is a
+        // napkin-bound agent; otherwise under `.nap/consultations/`. This keeps
+        // an audit trail in the workitem's own folder.
+        const target = req.target as string;
+        const question = req.question as string;
+        const askerSessionId = (req.askerSessionId as string | null) ?? null;
+        if (!target || typeof target !== 'string') {
+          throw new Error('ask: missing target');
+        }
+        if (!question || typeof question !== 'string') {
+          throw new Error('ask: missing question');
+        }
+
+        const allAgents = model.getAllAgents();
+        const resolved = resolveByName(allAgents, target);
+        if (!resolved.ok) {
+          throw new Error(`ask: ${resolved.error}`);
+        }
+        const targetAgent = resolved.agent;
+        if (targetAgent.exited || targetAgent.archived) {
+          throw new Error(
+            `ask: target "${target}" has exited — agents must stay idle after \`nap-pro done\` to be reachable. Spawn a new consultant or address this to the human.`,
+          );
+        }
+
+        // Find the asker — by session id if provided, falling back to a no-asker case.
+        const asker = askerSessionId
+          ? allAgents.find((a) => a.id === askerSessionId)
+          : null;
+        const askerName = asker?.name ?? 'human';
+
+        // Pick the consultations dir. Prefer the asker's napkin; fall back to
+        // the target's napkin; fall back to a project-level dir.
+        let consultationsDir: string | null = null;
+        if (asker?.napkinId) {
+          const napkin = model.getNapkins().find((n) => n.slug === asker.napkinId);
+          if (napkin) consultationsDir = path.join(napkin.path, 'consultations');
+        }
+        if (!consultationsDir && targetAgent.napkinId) {
+          const napkin = model.getNapkins().find((n) => n.slug === targetAgent.napkinId);
+          if (napkin) consultationsDir = path.join(napkin.path, 'consultations');
+        }
+        if (!consultationsDir) {
+          // No napkin context — put it under the project-level .nap/consultations/.
+          // Derive from the target's homePath which always contains the project root.
+          const nepicMatch = targetAgent.homePath.match(/^(.*\/\.nap)\//);
+          const napDir = nepicMatch ? nepicMatch[1] : null;
+          if (!napDir) {
+            throw new Error('ask: could not resolve a consultations dir');
+          }
+          consultationsDir = path.join(napDir, 'consultations');
+        }
+        await fsPromises.mkdir(consultationsDir, { recursive: true });
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const safeFrom = askerName.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const safeTo = targetAgent.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const stem = `${ts}-${safeFrom}-to-${safeTo}`;
+        const questionPath = path.join(consultationsDir, `${stem}.q.md`);
+        const answerPath = path.join(consultationsDir, `${stem}.a.md`);
+
+        const qBody =
+          `# Question from ${askerName} to ${targetAgent.name}\n\n` +
+          `**Asked at:** ${new Date().toISOString()}\n\n` +
+          `## Question\n\n${question}\n`;
+        await fsPromises.writeFile(questionPath, qBody);
+
+        const promptForTarget =
+          `[CONSULT] You have a question from ${askerName}.\n\n` +
+          `Question: ${question}\n\n` +
+          `Read the full question at: ${questionPath}\n` +
+          `Write your answer to: ${answerPath}\n\n` +
+          `Answer concisely from the context you already have. If you don't know the answer or it's ambiguous, say so plainly in the answer file — don't guess. After writing the answer file, stay idle.`;
+        enqueue(targetAgent.id, promptForTarget, false);
+
+        return { id: reqId, questionPath, answerPath };
       }
 
       case 'key': {
@@ -199,6 +375,11 @@ export function createRequestHandler(
           command,
           timestamp: Date.now(),
           payload,
+        });
+
+        emitActivity(agentId, 'permission-requested', `${tool}(${command})`, {
+          tool,
+          command,
         });
 
         // Poke guardian if present + running
@@ -280,6 +461,13 @@ export function createRequestHandler(
         clearInterval(entry.keepaliveTimer);
         pendingRegistry.delete(agentId);
         model.clearPendingApproval(agentId);
+
+        emitActivity(
+          agentId,
+          decision === 'allow' ? 'permission-allowed' : 'permission-denied',
+          decision === 'allow' ? 'permission allowed' : `permission denied${message ? `: ${message}` : ''}`,
+          { decision, message, interrupt },
+        );
 
         // Resolve the hanging hook-permission-request Promise
         entry.resolve({ decision, message, interrupt: interrupt || undefined });

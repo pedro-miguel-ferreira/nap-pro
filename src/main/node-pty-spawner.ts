@@ -1,10 +1,17 @@
 import * as pty from 'node-pty';
-import type { PtySpawner } from './pty-spawner';
+import type { PtySpawner, SpawnRequest, TimelineChunk } from './pty-spawner';
 import { getServerSocketPath } from '../shared/constants';
 
 /**
  * Real PtySpawner wrapping node-pty.
- * In test mode (NAP_TEST=1), replaces claude commands with `cat`.
+ *
+ * Spawns the executable directly via node-pty (no shell). The old `bash -c
+ * "claude ..."` pattern was an injection vector via the model id and required
+ * brittle quote escaping. Now we pass `file` + `args[]` and let execve handle
+ * arg boundaries — no shell interpretation possible.
+ *
+ * In test mode (NAP_TEST=1), replaces `claude` with `cat` so tests don't need
+ * a real Claude Code install.
  */
 export class NodePtySpawner implements PtySpawner {
   private processes = new Map<string, pty.IPty>();
@@ -12,7 +19,9 @@ export class NodePtySpawner implements PtySpawner {
   private outputBuffers = new Map<string, string[]>();
   private detectionBuffers = new Map<string, string>(); // ALL output, survives markReady
   private scrollbackBuffers = new Map<string, string>(); // scrollback for nap-pro log (256KB max)
+  private timelineChunks = new Map<string, TimelineChunk[]>(); // timestamped chunks for replay
   private readyTerminals = new Set<string>();
+  private pausedIds = new Set<string>();
   private dataHandler: ((id: string, data: string) => void) | null = null;
   private exitNotifier: ((id: string, exitCode: number) => void) | null = null;
   private testMode: boolean;
@@ -31,13 +40,14 @@ export class NodePtySpawner implements PtySpawner {
     this.exitNotifier = handler;
   }
 
-  spawn(opts: { id: string; command: string; cwd: string }): void {
-    const userShell = process.env['SHELL'] || '/bin/zsh';
-    const command = this.testMode ? 'cat' : opts.command;
-    const args = ['-c', command];
+  spawn(opts: SpawnRequest): void {
     const finalCwd = opts.cwd || process.env['NAP_CWD'] || process.cwd();
+    // In test mode, swap `claude` for `cat` so tests don't need claude on PATH.
+    // `cat` ignores args, so we drop them too — just echoes whatever's typed.
+    const file = this.testMode && opts.file === 'claude' ? 'cat' : opts.file;
+    const args = this.testMode && opts.file === 'claude' ? [] : opts.args;
 
-    const proc = pty.spawn(userShell, args, {
+    const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
@@ -54,9 +64,11 @@ export class NodePtySpawner implements PtySpawner {
     this.outputBuffers.set(opts.id, []);
     this.detectionBuffers.set(opts.id, '');
     this.scrollbackBuffers.set(opts.id, '');
+    this.timelineChunks.set(opts.id, []);
 
     const id = opts.id;
     const MAX_SCROLLBACK = 256 * 1024; // 256KB
+    const MAX_TIMELINE_BYTES = 256 * 1024;
 
     proc.onData((data: string) => {
       // Always capture in detection buffer (survives markReady flush)
@@ -74,6 +86,19 @@ export class NodePtySpawner implements PtySpawner {
         this.scrollbackBuffers.set(id, updated.length > MAX_SCROLLBACK ? updated.slice(-MAX_SCROLLBACK) : updated);
       }
 
+      // Capture timestamped chunks for the replay timeline.
+      // Cap by total bytes — drop oldest chunks until under budget.
+      const chunks = this.timelineChunks.get(id);
+      if (chunks) {
+        chunks.push({ ts: Date.now(), data });
+        let total = 0;
+        for (const c of chunks) total += c.data.length;
+        while (chunks.length > 0 && total > MAX_TIMELINE_BYTES) {
+          const dropped = chunks.shift()!;
+          total -= dropped.data.length;
+        }
+      }
+
       if (this.readyTerminals.has(id)) {
         this.dataHandler?.(id, data);
       } else {
@@ -87,6 +112,10 @@ export class NodePtySpawner implements PtySpawner {
       this.outputBuffers.delete(id);
       this.readyTerminals.delete(id);
       this.scrollbackBuffers.delete(id);
+      // NOTE: timelineChunks is intentionally NOT deleted here. The replay UI
+      // wants to inspect the agent's timeline AFTER it exits. They get GC'd on
+      // process restart or on the next agent reset.
+      this.pausedIds.delete(id);
 
       // Coordinator's exit callback (model update) — detection buffer still available
       const cb = this.exitCallbacks.get(id);
@@ -118,6 +147,7 @@ export class NodePtySpawner implements PtySpawner {
     this.outputBuffers.clear();
     this.readyTerminals.clear();
     this.scrollbackBuffers.clear();
+    this.timelineChunks.clear();
   }
 
   isRunning(id: string): boolean {
@@ -160,6 +190,11 @@ export class NodePtySpawner implements PtySpawner {
     return this.scrollbackBuffers.get(id) ?? '';
   }
 
+  /** Timestamped PTY output chunks for the replay timeline. */
+  getScrollbackTimeline(id: string): TimelineChunk[] {
+    return this.timelineChunks.get(id) ?? [];
+  }
+
   /** Write data to a pty's stdin */
   write(id: string, data: string): void {
     this.processes.get(id)?.write(data);
@@ -168,5 +203,54 @@ export class NodePtySpawner implements PtySpawner {
   /** Resize a pty */
   resize(id: string, cols: number, rows: number): void {
     this.processes.get(id)?.resize(cols, rows);
+  }
+
+  /**
+   * SIGSTOP the entire process group of the PTY.
+   * Negative pid signals the pgid; node-pty puts each child in its own session,
+   * so this freezes the shell + claude + any subprocesses atomically.
+   */
+  pause(id: string): boolean {
+    const proc = this.processes.get(id);
+    if (!proc) return false;
+    if (this.pausedIds.has(id)) return true;
+    try {
+      process.kill(-proc.pid, 'SIGSTOP');
+      this.pausedIds.add(id);
+      return true;
+    } catch {
+      // Fallback: signal just the leader
+      try {
+        process.kill(proc.pid, 'SIGSTOP');
+        this.pausedIds.add(id);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  /** SIGCONT the process group. */
+  resume(id: string): boolean {
+    const proc = this.processes.get(id);
+    if (!proc) return false;
+    if (!this.pausedIds.has(id)) return true;
+    try {
+      process.kill(-proc.pid, 'SIGCONT');
+      this.pausedIds.delete(id);
+      return true;
+    } catch {
+      try {
+        process.kill(proc.pid, 'SIGCONT');
+        this.pausedIds.delete(id);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  isPaused(id: string): boolean {
+    return this.pausedIds.has(id);
   }
 }

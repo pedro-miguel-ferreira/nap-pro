@@ -37,6 +37,11 @@ export function AgentContextMenu({
 }: AgentContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const setActiveTerminal = useNapStore((s) => s.setActiveTerminal);
+  const openDiffPanel = useNapStore((s) => s.openDiffPanel);
+  const openActivityPanel = useNapStore((s) => s.openActivityPanel);
+  const openCostPanel = useNapStore((s) => s.openCostPanel);
+  const openTimelinePanel = useNapStore((s) => s.openTimelinePanel);
+  const openReplayModal = useNapStore((s) => s.openReplayModal);
 
   // Close on outside click or escape
   useEffect(() => {
@@ -56,10 +61,14 @@ export function AgentContextMenu({
     };
   }, [onClose]);
 
-  const canPause = agent.running && !agent.exited;
-  const canResume = agent.started && !agent.exited && !agent.running;
+  const canPause = agent.running && !agent.paused && !agent.exited;
+  const canResume = agent.running && agent.paused && !agent.exited;
   const canStop = agent.running;
   const canPeek = agent.started || agent.archived;
+  // "Start" is for dormant agents — never started, not exited, not archived.
+  // The architect after init lands here, as do any stage agents whose stubs
+  // were created but not yet spawned by the workflow runner.
+  const canStart = !agent.started && !agent.exited && !agent.archived;
 
   const items: MenuEntry[] = [
     {
@@ -72,6 +81,14 @@ export function AgentContextMenu({
       },
     },
     { separator: true },
+    {
+      label: 'Start',
+      disabled: !canStart,
+      onClick: () => {
+        window.electronAPI?.startAgent?.(agent.id);
+        onClose();
+      },
+    },
     {
       label: 'Pause',
       disabled: !canPause,
@@ -96,18 +113,34 @@ export function AgentContextMenu({
         onClose();
       },
     },
+    {
+      label: 'Replay with…',
+      // Architects (no napkin) and never-started agents can't be replayed.
+      disabled: agent.napkinId === null || !agent.started,
+      onClick: () => {
+        openReplayModal(agent.id);
+        onClose();
+      },
+    },
     { separator: true },
     {
       label: 'Activity',
       onClick: () => {
-        window.electronAPI?.openActivityPanel?.(agent.id, 'agent');
+        openActivityPanel(agent.id, 'agent');
         onClose();
       },
     },
     {
       label: 'Files',
       onClick: () => {
-        window.electronAPI?.openDiffPanel?.(agent.id);
+        openDiffPanel(agent.id);
+        onClose();
+      },
+    },
+    {
+      label: 'Timeline',
+      onClick: () => {
+        openTimelinePanel(agent.id);
         onClose();
       },
     },
@@ -115,7 +148,39 @@ export function AgentContextMenu({
       label: 'Global activity',
       disabled: !isParentInTree,
       onClick: () => {
-        window.electronAPI?.openActivityPanel?.(agent.id, 'subtree');
+        openActivityPanel(agent.id, 'subtree');
+        onClose();
+      },
+    },
+    {
+      label: 'Reveal in Finder',
+      onClick: () => {
+        window.electronAPI?.revealProjectPath?.(agent.homePath);
+        onClose();
+      },
+    },
+    {
+      label: 'View response.md',
+      // Only meaningful for agents that have at least started (and likely written one).
+      disabled: !agent.started,
+      onClick: () => {
+        useNapStore.getState().openMarkdownPanel(`${agent.homePath}/response.md`);
+        onClose();
+      },
+    },
+    { separator: true },
+    {
+      label: 'Cost',
+      onClick: () => {
+        openCostPanel(agent.id, 'agent');
+        onClose();
+      },
+    },
+    {
+      label: 'Total cost',
+      disabled: !isParentInTree,
+      onClick: () => {
+        openCostPanel(agent.id, 'subtree');
         onClose();
       },
     },

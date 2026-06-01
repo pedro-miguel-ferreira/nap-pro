@@ -33,7 +33,8 @@ describe.skipIf(!cliBuilt)('nap init', () => {
       expect(fs.readFileSync(path.join(tmpDir, '.nap', '.gitignore'), 'utf8')).toBe('sock\nui-state.json\n');
 
       expect(fs.existsSync(path.join(tmpDir, '.nap', '00-org'))).toBe(true);
-      expect(fs.existsSync(path.join(tmpDir, '.nap', 'nepics', '01-v1', '20-architects', '001-architect'))).toBe(true);
+      // 20-architects/ exists but is empty — no auto-architect anymore.
+      expect(fs.existsSync(path.join(tmpDir, '.nap', 'nepics', '01-v1', '20-architects'))).toBe(true);
       expect(fs.existsSync(path.join(tmpDir, '.nap', 'nepics', '01-v1', '30-napkins'))).toBe(true);
 
       // NO old artifacts
@@ -45,19 +46,15 @@ describe.skipIf(!cliBuilt)('nap init', () => {
   });
 
   // T-0210-61
-  it('architect stub marker is correct', () => {
+  it('does NOT create a project-level architect agent', () => {
     const tmpDir = makeTmpDir();
     try {
       runNapInit(tmpDir);
-      const markerPath = path.join(tmpDir, '.nap', 'nepics', '01-v1', '20-architects', '001-architect', '.agent.nap.json');
-      const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
-
-      expect(marker.role).toBe('architect');
-      expect(marker.name).toBe('001-architect');
-      expect(marker.nepic).toBe('01-v1');
-      expect(marker.started).toBe(false);
-      expect(marker.cc_session_uuid).toMatch(/^[0-9a-f-]{36}$/);
-      expect(typeof marker.created_at).toBe('number');
+      const architectsDir = path.join(tmpDir, '.nap', 'nepics', '01-v1', '20-architects');
+      // Dir exists but empty — workflow runs can drop architect-style stage
+      // agents here later if a workflow needs one.
+      expect(fs.existsSync(architectsDir)).toBe(true);
+      expect(fs.readdirSync(architectsDir)).toEqual([]);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -70,19 +67,6 @@ describe.skipIf(!cliBuilt)('nap init', () => {
       runNapInit(tmpDir);
       const uiState = JSON.parse(fs.readFileSync(path.join(tmpDir, '.nap', 'ui-state.json'), 'utf8'));
       expect(uiState).toEqual({ activeNepicId: '01-v1' });
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
-
-  // T-0210-63
-  it('creates prompt.md for architect', () => {
-    const tmpDir = makeTmpDir();
-    try {
-      runNapInit(tmpDir);
-      const promptPath = path.join(tmpDir, '.nap', 'nepics', '01-v1', '20-architects', '001-architect', 'prompt.md');
-      expect(fs.existsSync(promptPath)).toBe(true);
-      expect(fs.readFileSync(promptPath, 'utf8').length).toBeGreaterThan(0);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

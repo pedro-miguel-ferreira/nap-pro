@@ -1,7 +1,23 @@
 // ── PtySpawner interface — injectable for testing ──
 
+export interface SpawnRequest {
+  id: string;
+  /** Executable name or absolute path. Resolved via PATH when bare. */
+  file: string;
+  /** Arguments. NOT shell-interpreted — passed directly via execve. */
+  args: string[];
+  /** Working directory. Empty string falls back to process.cwd() / NAP_CWD. */
+  cwd: string;
+}
+
+export interface TimelineChunk {
+  /** Wall-clock ms when this chunk arrived from the PTY. */
+  ts: number;
+  data: string;
+}
+
 export interface PtySpawner {
-  spawn(opts: { id: string; command: string; cwd: string }): void;
+  spawn(opts: SpawnRequest): void;
   kill(id: string): void;
   killAll(): void;
   isRunning(id: string): boolean;
@@ -10,19 +26,29 @@ export interface PtySpawner {
   clearExitHandlers(): void;
   write(id: string, data: string): void;
   getScrollback(id: string): string;
+  /** Timestamped PTY output for replay UI. Capped per agent. */
+  getScrollbackTimeline(id: string): TimelineChunk[];
+  /** SIGSTOP the PTY's process group. No-op if not running. Returns true if signaled. */
+  pause(id: string): boolean;
+  /** SIGCONT the PTY's process group. No-op if not running. Returns true if signaled. */
+  resume(id: string): boolean;
+  isPaused(id: string): boolean;
 }
 
 // ── FakePtySpawner — records calls, for small tests ──
 
 export class FakePtySpawner implements PtySpawner {
-  spawned: { id: string; command: string; cwd: string }[] = [];
+  spawned: SpawnRequest[] = [];
   writes: { id: string; data: string }[] = [];
+  pauseCalls: string[] = [];
+  resumeCalls: string[] = [];
   private running = new Set<string>();
+  private paused = new Set<string>();
   private exitCallbacks = new Map<string, (exitCode: number) => void | Promise<void>>();
   private outputBuffers = new Map<string, string>();
   private spawnTimes = new Map<string, number>();
 
-  spawn(opts: { id: string; command: string; cwd: string }): void {
+  spawn(opts: SpawnRequest): void {
     this.spawned.push(opts);
     this.running.add(opts.id);
     this.spawnTimes.set(opts.id, Date.now());
@@ -99,9 +125,32 @@ export class FakePtySpawner implements PtySpawner {
     return this.spawnTimes.get(id);
   }
 
-  /** Check if a spawn command was a --resume */
+  /** Check if a spawn was a --resume */
   isResumeCommand(id: string): boolean {
     const entry = this.spawned.find(s => s.id === id);
-    return entry ? entry.command.includes('--resume') : false;
+    return entry ? entry.args.includes('--resume') : false;
+  }
+
+  pause(id: string): boolean {
+    if (!this.running.has(id)) return false;
+    this.pauseCalls.push(id);
+    this.paused.add(id);
+    return true;
+  }
+
+  resume(id: string): boolean {
+    if (!this.running.has(id)) return false;
+    this.resumeCalls.push(id);
+    this.paused.delete(id);
+    return true;
+  }
+
+  isPaused(id: string): boolean {
+    return this.paused.has(id);
+  }
+
+  getScrollbackTimeline(_id: string): TimelineChunk[] {
+    // Fakes don't track timeline by default — tests can override if needed.
+    return [];
   }
 }

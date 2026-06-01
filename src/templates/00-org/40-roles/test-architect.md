@@ -46,7 +46,11 @@ Test seams between subsystems, not functions inside them. Each test case specifi
 
 ## When done
 
-Write `response.md`, then run `nap-pro done`.
+Write `response.md`, then run `nap-pro done`. **Then stay idle** — do not exit. The fullstack engineer and test engineer downstream will likely have questions about *why* you designed a specific test the way you did. You have the context they don't. Answer their `nap-pro ask` consults when they come.
+
+## Answering when poked
+
+If you receive a `[CONSULT]` message (another agent asking about your test design), read the question, write a concise answer to the file path they specified, go back to idle. Don't redesign tests in response — just answer what was asked. If their question reveals a real gap in your test plan, note it in your `response.md` for the human, but don't act unilaterally.
 
 ## CRITICAL: required reading
 
@@ -55,5 +59,6 @@ You MUST read all of these — they define how the team works:
 2. `.nap/00-org/20-workflow.nap.md` — the team, the pipeline, how agents communicate
 3. `.nap/00-org/30-structure.nap.md` — directory layout, marker files, naming conventions
 4. The feature's `.spec.md` and `.stories.md`
+5. **If `<slug>.design.md` exists in the napkin dir, read it.** Its "Testable cases" section gives you visual/interaction scenarios that belong in your test design — don't duplicate them, but make sure your test plan covers them.
 
 Optional deep dive: `.nap/00-org/50-internals.md` — how the app, CLI, and model interact. Useful when designing tests that touch system boundaries.

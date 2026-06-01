@@ -95,7 +95,7 @@ describe('STOP→RUN resume decisions', () => {
     const decisions = computeResumeActions(model.getAllAgents());
     const ta = decisions.find((d) => d.agentId === 'uuid-ta');
     expect(ta!.action).toBe('resume');
-    expect(ta!.command).toContain('--resume uuid-ta');
+    expect(ta!.args.join(' ')).toContain('--resume uuid-ta');
   });
 
   // T-0200-11
@@ -110,15 +110,15 @@ describe('STOP→RUN resume decisions', () => {
   });
 
   // T-0200-12
-  it('Case C — not started → fresh', async () => {
+  it('Case C — not started → skip (no auto-boot on launch)', async () => {
     const fs = createSurvivabilityFixture();
     const model = createModel(fs);
     await model.loadFromFilesystem(NEPIC_DIR);
 
     const decisions = computeResumeActions(model.getAllAgents());
     const fresh = decisions.find((d) => d.agentId === 'uuid-fresh');
-    expect(fresh!.action).toBe('fresh');
-    expect(fresh!.command).toContain('--session-id uuid-fresh');
+    expect(fresh!.action).toBe('skip');
+    expect(fresh!.args).toBeUndefined();
   });
 
   // T-0200-13
@@ -130,7 +130,7 @@ describe('STOP→RUN resume decisions', () => {
     const decisions = computeResumeActions(model.getAllAgents());
     const arch = decisions.find((d) => d.agentId === 'uuid-arch');
     expect(arch!.action).toBe('resume');
-    expect(arch!.command).toContain('--resume uuid-arch');
+    expect(arch!.args.join(' ')).toContain('--resume uuid-arch');
   });
 
   // T-0200-14
@@ -158,11 +158,12 @@ describe('STOP→RUN with FakePtySpawner', () => {
 
     const call = ptySpawner.spawned.find((s) => s.id === 'uuid-ta');
     expect(call).toBeDefined();
-    expect(call!.command).toContain('claude --verbose --resume uuid-ta');
+    expect(call!.file).toBe('claude');
+    expect(call!.args.join(' ')).toContain('--verbose --resume uuid-ta');
   });
 
   // T-0200-21
-  it('Fresh start spawns pty with --session-id flag + prompt', async () => {
+  it('Never-started agent: NO pty spawned on launch (dormant)', async () => {
     const fs = createSurvivabilityFixture();
     const model = createModel(fs);
     await model.loadFromFilesystem(NEPIC_DIR);
@@ -170,14 +171,11 @@ describe('STOP→RUN with FakePtySpawner', () => {
 
     await startAgents(model, ptySpawner);
 
-    const call = ptySpawner.spawned.find((s) => s.id === 'uuid-fresh');
-    expect(call).toBeDefined();
-    expect(call!.command).toContain('--session-id uuid-fresh');
-    expect(call!.command).toContain('read');
+    expect(ptySpawner.spawned.find((s) => s.id === 'uuid-fresh')).toBeUndefined();
   });
 
   // T-0200-22
-  it('Fresh start writes started: true to marker', async () => {
+  it('Never-started agent: marker stays started: false (no auto-boot)', async () => {
     const fs = createSurvivabilityFixture();
     const model = createModel(fs);
     await model.loadFromFilesystem(NEPIC_DIR);
@@ -188,7 +186,7 @@ describe('STOP→RUN with FakePtySpawner', () => {
     const marker = (await fs.readJSON(
       'nepic/30-napkins/0200-build/agents/001-fs-eng/.agent.nap.json',
     )) as any;
-    expect(marker.started).toBe(true);
+    expect(marker.started).toBe(false);
   });
 
   // T-0200-23
@@ -212,17 +210,17 @@ describe('STOP→RUN with FakePtySpawner', () => {
 
     await startAgents(model, ptySpawner);
 
-    // Case A: running
+    // Case A: running (resumed)
     const ta = model.getNapkins()[0].agents.find((a) => a.id === 'uuid-ta');
     expect(ta!.running).toBe(true);
 
-    // Case B: not running (exited)
+    // Case B: not running (exited — skipped)
     const fsEng = model.getNapkins()[0].agents.find((a) => a.id === 'uuid-fs');
     expect(fsEng!.running).toBe(false);
 
-    // Case C: running (fresh start)
+    // Case C: not running (never-started — now dormant, started manually by the user)
     const fresh = model.getNapkins()[1].agents.find((a) => a.id === 'uuid-fresh');
-    expect(fresh!.running).toBe(true);
+    expect(fresh!.running).toBe(false);
   });
 });
 
@@ -237,7 +235,9 @@ describe('RUN→STOP transition', () => {
     const ptySpawner = new FakePtySpawner();
 
     await startAgents(model, ptySpawner);
-    expect(ptySpawner.runningCount()).toBe(3); // uuid-ta, uuid-fresh, uuid-arch
+    // Only previously-started agents auto-resume on launch — uuid-fresh stays
+    // dormant until the user starts it manually (no-auto-boot, per resume.ts).
+    expect(ptySpawner.runningCount()).toBe(2); // uuid-ta, uuid-arch
 
     await stopApp(model, ptySpawner);
     expect(ptySpawner.runningCount()).toBe(0);
@@ -425,6 +425,41 @@ describe('Done signal', () => {
     expect(agent!.done).toBe(true);
   });
 
+  // T-0200-44b
+  it('clearAgentDone flips done back to false in-memory + on disk', async () => {
+    const fs = createSurvivabilityFixture();
+    const model = createModel(fs);
+    await model.loadFromFilesystem(NEPIC_DIR);
+    const ptySpawner = new FakePtySpawner();
+
+    await startAgents(model, ptySpawner);
+    await model.setAgentDone('uuid-ta');
+    expect(model.getNapkins()[0].agents.find((a) => a.id === 'uuid-ta')!.done).toBe(true);
+
+    await model.clearAgentDone('uuid-ta');
+
+    // In-memory: cleared
+    expect(model.getNapkins()[0].agents.find((a) => a.id === 'uuid-ta')!.done).toBe(false);
+
+    // On-disk persistence: reload from a fresh model — done stays false.
+    const model2 = createModel(fs);
+    await model2.loadFromFilesystem(NEPIC_DIR);
+    expect(model2.getNapkins()[0].agents.find((a) => a.id === 'uuid-ta')!.done).toBe(false);
+  });
+
+  // T-0200-44c
+  it('clearAgentDone on an already-not-done agent is a no-op', async () => {
+    const fs = createSurvivabilityFixture();
+    const model = createModel(fs);
+    await model.loadFromFilesystem(NEPIC_DIR);
+    const ptySpawner = new FakePtySpawner();
+    await startAgents(model, ptySpawner);
+
+    // uuid-ta starts not-done — clearAgentDone should not throw or notify spuriously.
+    await model.clearAgentDone('uuid-ta');
+    expect(model.getNapkins()[0].agents.find((a) => a.id === 'uuid-ta')!.done).toBe(false);
+  });
+
   // T-0200-45
   it('Done agent is resumed on restart (done ≠ exited)', async () => {
     const fs = createSurvivabilityFixture();
@@ -443,7 +478,7 @@ describe('Done signal', () => {
 
     const call = pty2.spawned.find((s) => s.id === 'uuid-ta');
     expect(call).toBeDefined();
-    expect(call!.command).toContain('--resume uuid-ta');
+    expect(call!.args.join(' ')).toContain('--resume uuid-ta');
   });
 
   // T-0200-46
@@ -474,11 +509,14 @@ describe('Survivability journeys', () => {
   it('Journey — start → agent exits → quit → restart → correct agents resume', async () => {
     const fs = createSurvivabilityFixture();
 
-    // Phase 1: start, agent exits
+    // Phase 1: start, agent exits. Manually start uuid-fresh (simulating
+    // right-click → Start) so it writes started=true; without this step the
+    // agent stays dormant under no-auto-boot.
     const model1 = createModel(fs);
     await model1.loadFromFilesystem(NEPIC_DIR);
     const pty1 = new FakePtySpawner();
     await startAgents(model1, pty1);
+    await model1.startAgentById('uuid-fresh', 'read prompt.md', pty1);
     await pty1.simulateExit('uuid-ta', 0);
     await stopApp(model1, pty1);
 
@@ -494,27 +532,32 @@ describe('Survivability journeys', () => {
     // uuid-arch: Case A → resumed
     const archCall = pty2.spawned.find((s) => s.id === 'uuid-arch');
     expect(archCall).toBeDefined();
-    expect(archCall!.command).toContain('--resume');
+    expect(archCall!.args.join(' ')).toContain('--resume');
 
-    // uuid-fresh: was Case C in phase 1, now Case A (started=true written)
+    // uuid-fresh: was manually started in phase 1, now Case A
     const freshCall = pty2.spawned.find((s) => s.id === 'uuid-fresh');
     expect(freshCall).toBeDefined();
-    expect(freshCall!.command).toContain('--resume uuid-fresh');
+    expect(freshCall!.args.join(' ')).toContain('--resume uuid-fresh');
   });
 
   // T-0200-51
-  it('Journey — fresh agent → started=true → quit → restart → now resumes', async () => {
+  it('Journey — fresh agent → manual start → quit → restart → now resumes', async () => {
     const fs = createSurvivabilityFixture();
     const freshMarkerPath =
       'nepic/30-napkins/0200-build/agents/001-fs-eng/.agent.nap.json';
 
-    // Phase 1: fresh start writes started=true
+    // Phase 1: launch does NOT auto-start uuid-fresh (no-auto-boot). The user
+    // explicitly starts it, which writes started=true.
     const model1 = createModel(fs);
     await model1.loadFromFilesystem(NEPIC_DIR);
     const pty1 = new FakePtySpawner();
     await startAgents(model1, pty1);
-    const marker1 = (await fs.readJSON(freshMarkerPath)) as any;
-    expect(marker1.started).toBe(true);
+    const markerBeforeStart = (await fs.readJSON(freshMarkerPath)) as any;
+    expect(markerBeforeStart.started).toBe(false);
+
+    await model1.startAgentById('uuid-fresh', 'read prompt.md', pty1);
+    const markerAfterStart = (await fs.readJSON(freshMarkerPath)) as any;
+    expect(markerAfterStart.started).toBe(true);
     await stopApp(model1, pty1);
 
     // Phase 2: now Case A
@@ -524,7 +567,7 @@ describe('Survivability journeys', () => {
     await startAgents(model2, pty2);
 
     const call = pty2.spawned.find((s) => s.id === 'uuid-fresh');
-    expect(call!.command).toContain('--resume uuid-fresh'); // Case A, not C
+    expect(call!.args.join(' ')).toContain('--resume uuid-fresh'); // Case A, not C
   });
 
   // T-0200-52
