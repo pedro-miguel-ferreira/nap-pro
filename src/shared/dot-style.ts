@@ -22,6 +22,7 @@ const ROLE_COLORS: Record<string, string> = {
   'eng-reviewer': '#ec4899',     // pink — fresh-eyes engineering review
   'product-reviewer': '#eab308', // amber — PM lens
   'designer': '#d946ef',         // magenta — Figma → design.md translator
+  'ai-researcher': '#06b6d4',    // cyan — SOTA model research → research.md
 };
 
 const DEFAULT_COLOR = '#3b82f6';  // blue for unknown roles
