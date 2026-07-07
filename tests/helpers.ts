@@ -42,11 +42,18 @@ export function createTestNepicDir(
 /**
  * Launch v3 Electron app for testing.
  * Sets NAP_CWD to a tmpDir containing fixture data.
+ * NAP_PRO_STATE_DIR is pointed inside the tmpDir so test launches never
+ * touch the real ~/.nap-pro/state.json (recent-projects list).
  */
 export async function launchApp(tmpDir: string): Promise<ElectronApplication> {
   const app = await electron.launch({
     args: [APP_DIR],
-    env: { ...process.env, NAP_TEST: '1', NAP_CWD: tmpDir },
+    env: {
+      ...process.env,
+      NAP_TEST: '1',
+      NAP_CWD: tmpDir,
+      NAP_PRO_STATE_DIR: path.join(tmpDir, '.nap-pro-state'),
+    },
   });
   return app;
 }
