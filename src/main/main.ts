@@ -270,27 +270,35 @@ ipcMain.handle(
   },
 );
 
+// Roots the markdown viewer/editor may touch: the project cwd plus every
+// worktree the model tracks — napkin worktrees and per-agent overrides
+// (stage replays). All of these are dirs nap-pro itself created.
+function getFileAccessRoots(cwd: string): string[] {
+  if (!projectModel) return [cwd];
+  const napkins = projectModel.getNapkins();
+  const agentWorktrees = [
+    ...napkins.flatMap((n) => n.agents),
+    ...projectModel.getArchitects(),
+  ].map((a) => a.worktreePath);
+  const napkinWorktrees = napkins.map((n) => n.worktreePath);
+  const trackedWorktrees = [...napkinWorktrees, ...agentWorktrees].filter(
+    (wp): wp is string => !!wp,
+  );
+  return [cwd, ...trackedWorktrees];
+}
+
 ipcMain.handle('file:read', async (_event, p: string) => {
   // Read an arbitrary file's contents — used by the in-app markdown viewer
   // for napkin scaffolding files, response.md, design.md, agent-edited files
-  // inside worktrees, etc. Two-tier security clamp:
-  //   1. Always allow paths inside the current project cwd
-  //   2. Also allow paths inside any napkin's worktree path that the model
-  //      tracks — those are dirs nap-pro itself created via createWorktree
-  // Anything outside both is refused.
+  // inside worktrees, etc. Security clamp: only the project cwd and tracked
+  // worktrees (see getFileAccessRoots). Anything outside is refused.
   const cwd = process.env['NAP_CWD'];
   if (!cwd) return { error: true, message: 'no project loaded' };
   if (typeof p !== 'string' || !p) {
     return { error: true, message: 'invalid path' };
   }
 
-  const trackedWorktrees = projectModel
-    ? projectModel
-        .getNapkins()
-        .map((n) => n.worktreePath)
-        .filter((wp): wp is string => !!wp)
-    : [];
-  const allowed = [cwd, ...trackedWorktrees];
+  const allowed = getFileAccessRoots(cwd);
   if (!allowed.some((root) => isPathInside(p, root))) {
     return {
       error: true,
@@ -322,13 +330,7 @@ ipcMain.handle('file:write', async (_event, p: string, content: string) => {
   if (typeof content !== 'string') {
     return { error: true, message: 'content must be a string' };
   }
-  const trackedWorktrees = projectModel
-    ? projectModel
-        .getNapkins()
-        .map((n) => n.worktreePath)
-        .filter((wp): wp is string => !!wp)
-    : [];
-  const allowed = [cwd, ...trackedWorktrees];
+  const allowed = getFileAccessRoots(cwd);
   if (!allowed.some((root) => isPathInside(p, root))) {
     return {
       error: true,

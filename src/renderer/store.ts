@@ -13,6 +13,8 @@ export interface NapStore {
   nepics: NepicInfo[];
 
   // ── Renderer-only state (preserved across snapshots) ──
+  /** Project root (NAP_CWD) — fallback cwd for resolving agents' relative file links. */
+  projectCwd: string;
   focusedCardSlug: string | null;
   cardViewMode: CardViewMode;
   sidebarVisible: boolean;
@@ -66,6 +68,7 @@ export interface NapStore {
   staleNapkins: Record<string, { workflowName: string; changedFiles: string[]; since: number }>; // null = manage workflows; non-null = pick a workflow to run on this napkin
 
   // ── Actions ──
+  setProjectCwd: (cwd: string) => void;
   applySnapshot: (snapshot: AppSnapshot) => void;
   setActiveTerminal: (id: string) => void;
   expandCard: (slug: string) => void;
@@ -143,6 +146,7 @@ export const useNapStore = create<NapStore>((set, get) => ({
   watcherEvents: [],
   nepics: [],
 
+  projectCwd: '',
   focusedCardSlug: null,
   cardViewMode: 'collapsed' as CardViewMode,
   sidebarVisible: true,
@@ -174,6 +178,10 @@ export const useNapStore = create<NapStore>((set, get) => ({
   addStageModalOpen: false,
   addStageModalNapkinSlug: null,
   staleNapkins: {},
+
+  setProjectCwd: (cwd: string) => {
+    set({ projectCwd: cwd });
+  },
 
   // Snapshot only updates model state — renderer-only state preserved
   applySnapshot: (snapshot: AppSnapshot) => {

@@ -1,6 +1,7 @@
 import React from 'react';
 import { FILE_PATH_REGEX, extractPathAndLocation } from './file-link-provider';
 import { useNapStore } from './store';
+import { openAgentFilePath } from './agent-file-open';
 
 /**
  * Render `text` with any file-path-shaped tokens turned into clickable spans.
@@ -73,9 +74,6 @@ function looksLikeUrl(text: string, startIndex: number): boolean {
 
 function handlePathClick(raw: string): void {
   const { path } = extractPathAndLocation(raw);
-  if (path.endsWith('.md')) {
-    useNapStore.getState().openMarkdownPanel(path);
-  } else {
-    window.electronAPI?.openFilePath(path);
-  }
+  // Resolve relative paths in the context of the agent whose activity is shown.
+  openAgentFilePath(useNapStore.getState().activityPanelAgentId, path);
 }

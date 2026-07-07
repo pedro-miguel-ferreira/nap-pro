@@ -20,7 +20,7 @@ import { KanbanOverlay } from './KanbanOverlay';
 import { Gutter } from './Gutter';
 import { useNapStore, loadPersistedUiState } from './store';
 import { createTerminalInstance, getTerminal, disposeTerminal } from './terminal-registry';
-import { createFileLinkProvider } from './file-link-provider';
+import { registerAgentFileLinks } from './agent-file-open';
 import type { AppSnapshot, ChangedFile, ActivityEvent, WorkflowDef, CostQueryResult, BranchInfo, WorkflowRun, TimelineSnapshot, StageStats } from '../shared/bridge-types';
 import '@xterm/xterm/css/xterm.css';
 
@@ -212,21 +212,9 @@ function App() {
         entry.terminal.onData((data) => {
           window.electronAPI?.pty?.write(agent.id, data);
         });
-        // File link provider — intercept `.md` clicks for the in-app viewer,
-        // fall through to OS reveal for everything else.
-        entry.terminal.registerLinkProvider(
-          createFileLinkProvider(
-            entry.terminal,
-            () => '/',
-            (filePath) => {
-              if (filePath.endsWith('.md')) {
-                useNapStore.getState().openMarkdownPanel(filePath);
-              } else {
-                window.electronAPI?.openFilePath(filePath);
-              }
-            },
-          ),
-        );
+        // File link provider — `.md` clicks open the in-app viewer, everything
+        // else reveals in the OS. Relative paths resolve against the agent's cwd.
+        registerAgentFileLinks(entry.terminal, agent.id);
         // Signal ready after next tick (terminal needs to be opened first)
         window.electronAPI?.pty?.ready(agent.id);
       }
@@ -385,7 +373,9 @@ function Root() {
     let cancelled = false;
     (async () => {
       const res = await window.electronAPI?.getInitialProject?.();
-      if (!cancelled) setProjectLoaded(!!res?.loaded);
+      if (cancelled) return;
+      if (res?.cwd) useNapStore.getState().setProjectCwd(res.cwd);
+      setProjectLoaded(!!res?.loaded);
     })();
     return () => {
       cancelled = true;

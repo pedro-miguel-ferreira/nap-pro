@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNapStore } from './store';
 import type { AgentState } from '../shared/bridge-types';
 import { getTerminal, openTerminal, createTerminalInstance, toggleFollow } from './terminal-registry';
-import { createFileLinkProvider } from './file-link-provider';
+import { registerAgentFileLinks } from './agent-file-open';
 
 function useActiveAgent(): AgentState | null {
   const activeTerminalId = useNapStore((s) => s.activeTerminalId);
@@ -263,13 +263,7 @@ export function Terminal() {
       entry.terminal.onData((data) => {
         window.electronAPI.pty.write(activeTerminalId, data);
       });
-      entry.terminal.registerLinkProvider(
-        createFileLinkProvider(
-          entry.terminal,
-          () => '/',
-          (filePath) => window.electronAPI.openFilePath(filePath),
-        ),
-      );
+      registerAgentFileLinks(entry.terminal, activeTerminalId);
       // Check if this agent needs a pty resumed
       const state = useNapStore.getState();
       const allAgents = [
