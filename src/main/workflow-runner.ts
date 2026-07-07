@@ -118,9 +118,67 @@ export async function runWorkflow(
 
   // Open a registry entry — produces the runId + abort signal we use throughout.
   const willRunScope = !!opts.fromSpec && !!def.scope;
-  const entry = registry.start(workflowName, napkinSlug, def, { withScope: willRunScope });
-  const runId = entry.run.runId;
-  const signal = entry.controller.signal;
+  const entry = registry.start(workflowName, napkinSlug, def, {
+    withScope: willRunScope,
+    fromSpec: opts.fromSpec,
+  });
+  return driveRun(entry.run.runId, entry.controller.signal, def, napkinSlug, deps, opts, new Set());
+}
+
+/**
+ * Resume an interrupted or failed run from the first non-completed stage.
+ * The registry restores the persisted def/fromSpec and the set of stages that
+ * already completed; everything else re-runs through the normal machinery
+ * (existing agent stubs get reset for a clean claude session).
+ */
+export async function resumeWorkflowRun(
+  runId: string,
+  deps: RunWorkflowDeps,
+): Promise<RunWorkflowResult> {
+  const revived = deps.registry.reactivate(runId);
+  if (!revived) {
+    return { ok: false, message: 'run not found or not resumable (only interrupted/failed runs can resume)' };
+  }
+  const { entry, def, fromSpec, completedStages } = revived;
+  const napkinSlug = entry.run.napkinSlug;
+  const napkin = deps.model.getNapkins().find((n) => n.slug === napkinSlug);
+  if (!napkin) {
+    deps.registry.complete(runId, 'failed', `napkin '${napkinSlug}' no longer exists`);
+    return { ok: false, message: `napkin '${napkinSlug}' no longer exists` };
+  }
+  return driveRun(
+    runId,
+    entry.controller.signal,
+    def,
+    napkinSlug,
+    deps,
+    fromSpec ? { fromSpec } : {},
+    completedStages,
+  );
+}
+
+/**
+ * Drive a registered run to completion: ensure the worktree, run the scope
+ * stage (from-spec launches), then the stage groups. `skipStages` holds names
+ * of stages already completed in a previous attempt (resume path) — they are
+ * skipped, everything else runs normally.
+ */
+async function driveRun(
+  runId: string,
+  signal: AbortSignal,
+  def: WorkflowDef,
+  napkinSlug: string,
+  deps: RunWorkflowDeps,
+  opts: RunWorkflowOpts,
+  skipStages: Set<string>,
+): Promise<RunWorkflowResult> {
+  const { model, projectCwd, registry } = deps;
+
+  const napkin = model.getNapkins().find((n) => n.slug === napkinSlug);
+  if (!napkin) {
+    registry.complete(runId, 'failed', `napkin '${napkinSlug}' not found`);
+    return { ok: false, message: `napkin '${napkinSlug}' not found` };
+  }
 
   // 1. Worktree (idempotent — getWorktreePath check inside createWorktree)
   if (def.useWorktree !== false && !napkin.worktreePath) {
@@ -142,8 +200,8 @@ export async function runWorkflow(
 
   // Scope stage — only when invoked from a spec AND the workflow has a scope
   // stage defined. Populates the napkin's .nap.md / .spec.md / .stories.md
-  // before the regular stages run.
-  if (opts.fromSpec && def.scope) {
+  // before the regular stages run. Skipped on resume when already completed.
+  if (opts.fromSpec && def.scope && !skipStages.has('000-scope')) {
     const scopeResult = await runScopeStage(
       def.scope,
       napkinSlug,
@@ -193,7 +251,11 @@ export async function runWorkflow(
       };
     }
 
-    const groupPromises = group.map((stage) => {
+    // Resume path: stages that completed in a previous attempt don't re-run.
+    const pendingInGroup = group.filter((stage) => !skipStages.has(stage.name));
+    if (pendingInGroup.length === 0) continue;
+
+    const groupPromises = pendingInGroup.map((stage) => {
       const runOne = stage.kind === 'open-pr'
         ? runOpenPrStage(stage, napkinSlug, parentId, def, runId, deps)
         : runStage(stage, napkinSlug, parentId, def, runId, deps);
@@ -434,7 +496,7 @@ async function runStage(
     const refreshed = model.getAllAgents().find((a) => a.napkinId === napkinSlug && a.name === stage.name);
     const liveId = refreshed?.id ?? agent.id;
     registry.markStageStart(runId, stage.name, liveId);
-    const result = await awaitDoneOrExit(model, liveId);
+    const result = await awaitDoneOrExit(model, liveId, stageWatch(deps, runId, stage.name));
     registry.markStageEnd(runId, stage.name, result, stageFailureHint(result));
     return result;
   } else {
@@ -463,7 +525,7 @@ async function runStage(
   // (the reset path above already did this, but defending against future refactors).
   const liveId = startResult.id;
   registry.markStageStart(runId, stage.name, liveId);
-  const result = await awaitDoneOrExit(model, liveId);
+  const result = await awaitDoneOrExit(model, liveId, stageWatch(deps, runId, stage.name));
   registry.markStageEnd(runId, stage.name, result, stageFailureHint(result));
   return result;
 }
@@ -771,8 +833,8 @@ Then wait. When the human replies:
   }
 
   registry.markStageStart(runId, '000-scope', agent.id);
-  const result = await awaitDoneOrExit(model, agent.id);
-  registry.markStageEnd(runId, '000-scope', result);
+  const result = await awaitDoneOrExit(model, agent.id, stageWatch(deps, runId, '000-scope'));
+  registry.markStageEnd(runId, '000-scope', result, stageFailureHint(result));
   return result;
 }
 
@@ -833,9 +895,33 @@ export async function enumerateNapkinScaffolding(napkinDir: string, slug: string
   }
 }
 
+/** No pty output for this long while running → the stage is 'stalled'. */
+export const STALL_THRESHOLD_MS = parseInt(process.env['NAP_STALL_THRESHOLD_MS'] || '', 10) || 180_000;
+const STALL_CHECK_INTERVAL_MS = Math.min(15_000, Math.max(250, Math.floor(STALL_THRESHOLD_MS / 4)));
+
+interface StageWatch {
+  ptySpawner: PtySpawner;
+  /** Fired on stalled↔active transitions only. */
+  onStallChange: (stalled: boolean) => void;
+}
+
+/** Watch wiring for a stage: flips the registry's stalled flag on transitions. */
+function stageWatch(deps: RunWorkflowDeps, runId: string, stageName: string): StageWatch {
+  return {
+    ptySpawner: deps.ptySpawner,
+    onStallChange: (stalled) => deps.registry.markStageStalled(runId, stageName, stalled),
+  };
+}
+
 /**
  * Resolve when the agent's `done` flag flips true, or the agent exits.
  * Returns 'completed' on done, 'failed' on exit-without-done.
+ *
+ * With `watch` set, also runs a liveness watchdog: if the agent produces no
+ * pty output for STALL_THRESHOLD_MS (and isn't paused or waiting on a
+ * permission approval), onStallChange(true) fires; output resuming fires
+ * onStallChange(false). Detection only — the stage keeps waiting either way;
+ * the human decides whether to nudge or kill.
  *
  * Critical: synchronously check current state BEFORE subscribing. Without
  * this, an agent that exits between start and subscribe leaves the runner
@@ -844,14 +930,34 @@ export async function enumerateNapkinScaffolding(napkinDir: string, slug: string
 function awaitDoneOrExit(
   model: NapModel,
   agentId: string,
+  watch?: StageWatch,
 ): Promise<'completed' | 'failed'> {
   return new Promise((resolve) => {
     let unsub: (() => void) | null = null;
     let resolved = false;
 
+    // ── Liveness watchdog ──
+    const watchStartedAt = Date.now();
+    let stalled = false;
+    const stallTimer = watch
+      ? setInterval(() => {
+          const timeline = watch.ptySpawner.getScrollbackTimeline(agentId);
+          const lastOutputAt = timeline.length > 0 ? timeline[timeline.length - 1].ts : watchStartedAt;
+          const agent = model.getAllAgents().find((a) => a.id === agentId);
+          // Paused (SIGSTOP) and approval-blocked agents are silent on purpose.
+          const legitimatelyQuiet = watch.ptySpawner.isPaused(agentId) || !!agent?.pendingApproval;
+          const stalledNow = !legitimatelyQuiet && Date.now() - lastOutputAt > STALL_THRESHOLD_MS;
+          if (stalledNow !== stalled) {
+            stalled = stalledNow;
+            watch.onStallChange(stalled);
+          }
+        }, STALL_CHECK_INTERVAL_MS)
+      : null;
+
     function done(result: 'completed' | 'failed'): void {
       if (resolved) return;
       resolved = true;
+      if (stallTimer) clearInterval(stallTimer);
       try {
         unsub?.();
       } catch {

@@ -167,4 +167,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (path: string) => ipcRenderer.invoke('file:read', path),
   writeFile: (path: string, content: string) => ipcRenderer.invoke('file:write', path, content),
   pickFiles: (opts?: { title?: string }) => ipcRenderer.invoke('dialog:pick-files', opts ?? {}),
+  resumeWorkflowRun: (runId: string) => ipcRenderer.invoke('workflows:resume-run', runId),
+  nudgeWorkflowStage: (runId: string, stageName: string) =>
+    ipcRenderer.invoke('workflows:nudge-stage', runId, stageName),
 });

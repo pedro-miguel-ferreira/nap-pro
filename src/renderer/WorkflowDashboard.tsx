@@ -12,11 +12,13 @@ const RUN_COLOR: Record<WorkflowRunStatus, string> = {
   completed: '#22c55e',
   failed: '#ef4444',
   cancelled: '#6b7280',
+  interrupted: '#fb923c',
 };
 
 const STAGE_COLOR: Record<WorkflowStageRunStatus, string> = {
   pending: '#525252',
   running: '#f59e0b',
+  stalled: '#fb923c',
   completed: '#22c55e',
   failed: '#ef4444',
   'awaiting-architect': '#a855f7',
@@ -26,6 +28,7 @@ const STAGE_COLOR: Record<WorkflowStageRunStatus, string> = {
 const STAGE_LABEL: Record<WorkflowStageRunStatus, string> = {
   pending: 'pending',
   running: 'running',
+  stalled: 'stalled',
   completed: 'done',
   failed: 'failed',
   'awaiting-architect': 'awaiting',
@@ -156,6 +159,7 @@ function RunCard({ run }: { run: WorkflowRun }) {
   const setActiveTerminal = useNapStore((s) => s.setActiveTerminal);
   const color = RUN_COLOR[run.status];
   const isActive = run.status === 'running';
+  const isResumable = run.status === 'interrupted' || run.status === 'failed';
 
   return (
     <div
@@ -213,6 +217,21 @@ function RunCard({ run }: { run: WorkflowRun }) {
             Cancel
           </button>
         )}
+        {isResumable && (
+          <button
+            onClick={() => void window.electronAPI?.resumeWorkflowRun?.(run.runId)}
+            style={{
+              ...btnStyle,
+              width: 'auto',
+              padding: '0 10px',
+              borderColor: '#22c55e',
+              color: '#86efac',
+            }}
+            title="Completed stages are skipped; failed and pending stages re-run"
+          >
+            {run.status === 'interrupted' ? 'Resume' : 'Retry failed'}
+          </button>
+        )}
       </div>
 
       {run.message && (
@@ -234,6 +253,7 @@ function RunCard({ run }: { run: WorkflowRun }) {
           <StageRow
             key={idx}
             stage={stage}
+            runId={run.runId}
             onClick={() => {
               if (stage.agentId) setActiveTerminal(stage.agentId);
             }}
@@ -246,9 +266,11 @@ function RunCard({ run }: { run: WorkflowRun }) {
 
 function StageRow({
   stage,
+  runId,
   onClick,
 }: {
   stage: WorkflowStageRun;
+  runId: string;
   onClick: () => void;
 }) {
   const color = STAGE_COLOR[stage.status];
@@ -288,6 +310,27 @@ function StageRow({
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {stage.status === 'stalled' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              void window.electronAPI?.nudgeWorkflowStage?.(runId, stage.name);
+            }}
+            style={{
+              background: 'transparent',
+              border: '1px solid #fb923c',
+              color: '#fdba74',
+              borderRadius: 3,
+              padding: '1px 8px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 10,
+            }}
+            title="Send the agent a reminder to finish up (or report what it's blocked on)"
+          >
+            Nudge
+          </button>
+        )}
         <span
           style={{
             color,

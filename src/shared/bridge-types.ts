@@ -182,11 +182,15 @@ export type WorkflowRunStatus =
   | 'running'
   | 'completed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  /** App quit/crashed mid-run. Persisted stages survive; resume to continue. */
+  | 'interrupted';
 
 export type WorkflowStageRunStatus =
   | 'pending'
   | 'running'
+  /** Still running, but no pty output for a while — may need a nudge. */
+  | 'stalled'
   | 'completed'
   | 'failed'
   | 'awaiting-architect'

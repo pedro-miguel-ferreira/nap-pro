@@ -117,6 +117,8 @@ declare global {
         message?: string;
       }>;
       pickFiles?: (opts?: { title?: string }) => Promise<{ ok: boolean; paths?: string[] }>;
+      resumeWorkflowRun?: (runId: string) => Promise<{ ok: boolean; error?: string }>;
+      nudgeWorkflowStage?: (runId: string, stageName: string) => Promise<{ ok: boolean; error?: string }>;
     };
   }
 }

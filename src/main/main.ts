@@ -105,13 +105,15 @@ import { NodePtySpawner } from './node-pty-spawner';
 import { startAgents, RESUME_FAIL_THRESHOLD_MS } from './coordinators';
 import { startSocketServer, stopSocketServer } from './socket-server';
 import { createRequestHandler } from './socket-handler';
-import { setWriter } from './message-queue';
+import { setWriter, enqueue } from './message-queue';
+import { initNotifier, notify } from './notifier';
 import { getServerSocketPath } from '../shared/constants';
 import type { AppSnapshot } from '../shared/bridge-types';
 import { getHeadSha, getChangedFiles, getFileDiff } from './git-helpers';
 import { ActivityLogger, type ActivityEvent } from './activity-log';
 import {
   runWorkflow,
+  resumeWorkflowRun,
   defaultTemplatePrompt,
   enumerateNapkinScaffolding,
 } from './workflow-runner';
@@ -451,8 +453,12 @@ app.whenReady().then(async () => {
   // ── Activity logger — created early so socket-handler can emit ──
   const activityLogger = new ActivityLogger();
 
-  // ── Workflow registry — tracks all in-flight + recent runs ──
-  const workflowRegistry = new WorkflowRegistry();
+  // ── Workflow registry — tracks all in-flight + recent runs, persisted to
+  // .nap/workflows/runs/ so a restart can resume interrupted runs ──
+  const workflowRegistry = new WorkflowRegistry({
+    persistDir: join(projectCwd, '.nap', 'workflows', 'runs'),
+  });
+  await workflowRegistry.loadFromDisk();
 
   // ── Workflow watcher — watches contextFiles for change-driven rerun cues ──
   const workflowWatcher = new WorkflowWatcher(
@@ -476,6 +482,7 @@ app.whenReady().then(async () => {
   });
 
   const win = createWindow();
+  initNotifier(win, { enabled: !isTest });
 
   // Expose model for medium tests
   if (isTest) {
@@ -977,6 +984,10 @@ app.whenReady().then(async () => {
     if (!win.isDestroyed()) {
       win.webContents.send('activity:event', event);
     }
+    // Approval requests block the agent until a human answers — worth a ping.
+    if (event.type === 'permission-requested') {
+      notify(`Approval needed: ${event.agentName}`, event.text);
+    }
   });
 
   model.onChange(() => {
@@ -1216,10 +1227,68 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
 
-  // Push registry changes to the renderer
+  ipcMain.handle('workflows:resume-run', async (_event, runId: string) => {
+    if (!ptySpawner) return { ok: false, error: 'no pty spawner' };
+    // Kick off in the background — the dashboard tracks progress via run updates.
+    resumeWorkflowRun(runId, { model, ptySpawner, projectCwd, registry: workflowRegistry })
+      .then((result) => {
+        if (!win.isDestroyed()) {
+          const revived = workflowRegistry.list().find((r) => r.runId === runId);
+          win.webContents.send('workflow:complete', {
+            workflowName: revived?.workflowName ?? '',
+            napkinSlug: revived?.napkinSlug ?? '',
+            ok: result.ok,
+          });
+        }
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('[workflow] resume threw:', err);
+      });
+    return { ok: true };
+  });
+
+  ipcMain.handle('workflows:nudge-stage', async (_event, runId: string, stageName: string) => {
+    const entry = workflowRegistry.getEntry(runId);
+    const stage = entry?.run.stages.find((s) => s.name === stageName);
+    if (!stage?.agentId) return { ok: false, error: 'stage has no live agent' };
+    enqueue(
+      stage.agentId,
+      `[workflow-runner] You've produced no output for a while — are you stuck? ` +
+        `If the work is done: write your response to response.md and run \`nap-pro done\` (the pipeline is blocked on you). ` +
+        `If you're blocked: say exactly what you're blocked on in your terminal.`,
+    );
+    return { ok: true };
+  });
+
+  // Push registry changes to the renderer + fire system notifications on the
+  // transitions worth interrupting the user for.
+  const notifiedStalledStages = new Set<string>();
   workflowRegistry.onChange((run) => {
     if (!win.isDestroyed()) {
       win.webContents.send('workflow:run-update', run);
+    }
+
+    for (const stage of run.stages) {
+      const stallKey = `${run.runId}:${stage.name}`;
+      if (stage.status === 'stalled' && !notifiedStalledStages.has(stallKey)) {
+        notifiedStalledStages.add(stallKey);
+        notify(
+          `Stage stalled: ${stage.name}`,
+          `${run.workflowName} on ${run.napkinSlug} — no agent output for a while. Nudge or check its terminal.`,
+        );
+      } else if (stage.status !== 'stalled') {
+        notifiedStalledStages.delete(stallKey);
+      }
+    }
+
+    if (run.status === 'completed') {
+      notify(`Workflow completed: ${run.workflowName}`, `All stages finished on ${run.napkinSlug}.`);
+    } else if (run.status === 'failed') {
+      notify(
+        `Workflow failed: ${run.workflowName}`,
+        `${run.napkinSlug} — ${run.message ?? 'a stage failed'}. Open the runs dashboard to retry.`,
+      );
     }
   });
 

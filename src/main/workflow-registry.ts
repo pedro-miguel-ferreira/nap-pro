@@ -1,4 +1,6 @@
 import * as crypto from 'crypto';
+import * as fsPromises from 'fs/promises';
+import * as path from 'path';
 import type {
   WorkflowDef,
   WorkflowRun,
@@ -10,11 +12,11 @@ import type {
 /**
  * Tracks all in-flight + recently-completed workflow runs.
  *
- * State lives in memory only (electron main process). On app restart, runs
- * are gone — their stage agents persist on disk via the model, but the
- * orchestration record doesn't. Persistence to `.nap/workflows/runs/` is a
- * planned follow-up; for now, a relaunch means manually re-driving any
- * partially-completed flow.
+ * Every mutation is persisted to `<persistDir>/<runId>.json` (when a
+ * persistDir is configured) so an app restart doesn't lose orchestration
+ * state: on startup `loadFromDisk()` pulls the history back, flips runs that
+ * died mid-flight to 'interrupted', and `reactivate()` lets the runner resume
+ * them from the first non-completed stage.
  *
  * Each run carries an AbortController. Cancellation:
  *   - sets aborted=true on the controller
@@ -27,7 +29,16 @@ export interface WorkflowRegistryEntry {
   controller: AbortController;
 }
 
+/** What lands in the per-run JSON file — enough to display AND resume. */
+export interface PersistedRun {
+  run: WorkflowRun;
+  def: WorkflowDef;
+  fromSpec?: { specDocs: string[]; workItemName: string };
+}
+
 export type RunUpdateListener = (run: WorkflowRun) => void;
+
+const PERSISTED_RUN_FILE_CAP = 50;
 
 export class WorkflowRegistry {
   private entries = new Map<string, WorkflowRegistryEntry>();
@@ -37,12 +48,21 @@ export class WorkflowRegistry {
   /** Capped recent-completed buffer so the dashboard can show history briefly. */
   private completedHistory: WorkflowRun[] = [];
   private readonly historyCap = 25;
+  /** def + fromSpec per runId — needed to resume without re-parsing workflow files. */
+  private runContexts = new Map<string, { def: WorkflowDef; fromSpec?: PersistedRun['fromSpec'] }>();
+  private readonly persistDir: string | null;
+  /** Serializes run-file writes; also lets tests await pending persistence. */
+  private persistChain: Promise<void> = Promise.resolve();
+
+  constructor(opts: { persistDir?: string } = {}) {
+    this.persistDir = opts.persistDir ?? null;
+  }
 
   start(
     workflowName: string,
     napkinSlug: string,
     def: WorkflowDef,
-    opts: { withScope?: boolean } = {},
+    opts: { withScope?: boolean; fromSpec?: PersistedRun['fromSpec'] } = {},
   ): WorkflowRegistryEntry {
     const runId = crypto.randomUUID();
     const stages: WorkflowStageRun[] = computeStageOrder(def, opts);
@@ -63,8 +83,140 @@ export class WorkflowRegistry {
 
     this.entries.set(runId, entry);
     this.latestByNapkin.set(napkinSlug, runId);
+    this.runContexts.set(runId, { def, fromSpec: opts.fromSpec });
     this.emit(run);
     return entry;
+  }
+
+  // ── Persistence ──
+
+  /**
+   * Load persisted runs from disk into history. Runs that were 'running' when
+   * the app died are flipped to 'interrupted' (their in-flight stages back to
+   * 'pending') and can be resumed via reactivate(). Corrupt files are skipped.
+   */
+  async loadFromDisk(): Promise<void> {
+    if (!this.persistDir) return;
+    let fileNames: string[];
+    try {
+      fileNames = await fsPromises.readdir(this.persistDir);
+    } catch {
+      return; // no runs dir yet
+    }
+    const loaded: WorkflowRun[] = [];
+    for (const fileName of fileNames) {
+      if (!fileName.endsWith('.json')) continue;
+      try {
+        const raw = await fsPromises.readFile(path.join(this.persistDir, fileName), 'utf-8');
+        const persisted = JSON.parse(raw) as PersistedRun;
+        if (!persisted?.run?.runId || !persisted.def) continue;
+
+        if (persisted.run.status === 'running') {
+          persisted.run.status = 'interrupted';
+          persisted.run.message = 'app quit mid-run — resume to continue from the last completed stage';
+          for (const stage of persisted.run.stages) {
+            if (stage.status === 'running' || stage.status === 'stalled') {
+              stage.status = 'pending';
+              stage.endedAt = undefined;
+            }
+          }
+          const interruptedRun = persisted.run;
+          this.persistChain = this.persistChain.then(() => this.persistRun(interruptedRun));
+        }
+
+        this.runContexts.set(persisted.run.runId, {
+          def: persisted.def,
+          fromSpec: persisted.fromSpec,
+        });
+        loaded.push(persisted.run);
+      } catch {
+        // skip unreadable run files
+      }
+    }
+    loaded.sort((a, b) => b.startedAt - a.startedAt);
+    this.completedHistory = [...loaded, ...this.completedHistory].slice(0, this.historyCap);
+    void this.pruneRunFiles();
+  }
+
+  /**
+   * Bring an interrupted or failed run back to life for resumption: fresh
+   * AbortController, status back to 'running', non-completed stages reset to
+   * 'pending'. Returns everything the runner needs to re-drive it, or null
+   * when the run is unknown / still active / not resumable.
+   */
+  reactivate(runId: string): {
+    entry: WorkflowRegistryEntry;
+    def: WorkflowDef;
+    fromSpec?: PersistedRun['fromSpec'];
+    completedStages: Set<string>;
+  } | null {
+    if (this.entries.has(runId)) return null; // already active
+    const historyIdx = this.completedHistory.findIndex((r) => r.runId === runId);
+    const runContext = this.runContexts.get(runId);
+    if (historyIdx < 0 || !runContext) return null;
+    const run = this.completedHistory[historyIdx];
+    if (run.status !== 'interrupted' && run.status !== 'failed') return null;
+
+    this.completedHistory.splice(historyIdx, 1);
+    run.status = 'running';
+    run.endedAt = undefined;
+    run.message = undefined;
+    const completedStages = new Set<string>();
+    for (const stage of run.stages) {
+      if (stage.status === 'completed') {
+        completedStages.add(stage.name);
+      } else {
+        stage.status = 'pending';
+        stage.startedAt = undefined;
+        stage.endedAt = undefined;
+        stage.message = undefined;
+      }
+    }
+
+    const entry: WorkflowRegistryEntry = { run, controller: new AbortController() };
+    this.entries.set(runId, entry);
+    this.latestByNapkin.set(run.napkinSlug, runId);
+    this.emit(run);
+    return { entry, def: runContext.def, fromSpec: runContext.fromSpec, completedStages };
+  }
+
+  private persistRun(run: WorkflowRun): Promise<void> {
+    if (!this.persistDir) return Promise.resolve();
+    const runContext = this.runContexts.get(run.runId);
+    if (!runContext) return Promise.resolve();
+    const persisted: PersistedRun = {
+      run,
+      def: runContext.def,
+      fromSpec: runContext.fromSpec,
+    };
+    const filePath = path.join(this.persistDir, `${run.runId}.json`);
+    return fsPromises
+      .mkdir(this.persistDir, { recursive: true })
+      .then(() => fsPromises.writeFile(filePath, JSON.stringify(persisted, null, 2)))
+      .catch(() => {
+        // persistence is best-effort — never break the run over a disk hiccup
+      });
+  }
+
+  /** Keep the newest PERSISTED_RUN_FILE_CAP run files; delete the rest. */
+  private async pruneRunFiles(): Promise<void> {
+    if (!this.persistDir) return;
+    try {
+      const fileNames = (await fsPromises.readdir(this.persistDir)).filter((f) => f.endsWith('.json'));
+      if (fileNames.length <= PERSISTED_RUN_FILE_CAP) return;
+      const withTimes = await Promise.all(
+        fileNames.map(async (f) => {
+          const stat = await fsPromises.stat(path.join(this.persistDir!, f));
+          return { f, mtime: stat.mtimeMs };
+        }),
+      );
+      withTimes.sort((a, b) => b.mtime - a.mtime);
+      for (const { f } of withTimes.slice(PERSISTED_RUN_FILE_CAP)) {
+        await fsPromises.unlink(path.join(this.persistDir, f));
+      }
+    } catch {
+      // best-effort
+    }
   }
 
   /**
@@ -96,6 +248,24 @@ export class WorkflowRegistry {
     stage.endedAt = Date.now();
     if (message) stage.message = message;
     this.emit(entry.run);
+  }
+
+  /**
+   * Toggle a running stage's stalled flag (no pty output for a while). Only
+   * flips between 'running' and 'stalled' — terminal states are untouched.
+   */
+  markStageStalled(runId: string, stageName: string, stalled: boolean): void {
+    const entry = this.entries.get(runId);
+    if (!entry) return;
+    const stage = entry.run.stages.find((s) => s.name === stageName);
+    if (!stage) return;
+    if (stalled && stage.status === 'running') {
+      stage.status = 'stalled';
+      this.emit(entry.run);
+    } else if (!stalled && stage.status === 'stalled') {
+      stage.status = 'running';
+      this.emit(entry.run);
+    }
   }
 
   /** Final state setter. Moves the run into recent-history and removes the entry. */
@@ -165,7 +335,13 @@ export class WorkflowRegistry {
     };
   }
 
+  /** Await all queued run-file writes — used by tests and shutdown paths. */
+  flushPersistence(): Promise<void> {
+    return this.persistChain;
+  }
+
   private emit(run: WorkflowRun): void {
+    this.persistChain = this.persistChain.then(() => this.persistRun(run));
     for (const fn of this.listeners) {
       try {
         fn(run);
