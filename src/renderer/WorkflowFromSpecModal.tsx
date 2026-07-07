@@ -4,6 +4,27 @@ import { useNapStore } from './store';
 const SLUG_RE = /^[a-zA-Z0-9._-]+$/;
 
 /**
+ * Normalize text pasted into the spec-doc input into whole paths. Terminal
+ * copies hard-wrap long paths onto a new indented line — an indented line is
+ * a continuation of the previous path, not a new one. Non-indented lines are
+ * separate paths. Exported for unit tests.
+ */
+export function parsePastedPaths(text: string): string[] {
+  const paths: string[] = [];
+  for (const line of text.split('\n')) {
+    const isContinuation = /^\s/.test(line) && paths.length > 0;
+    const trimmedLine = line.trim();
+    if (!trimmedLine) continue;
+    if (isContinuation) {
+      paths[paths.length - 1] += trimmedLine;
+    } else {
+      paths.push(trimmedLine);
+    }
+  }
+  return paths;
+}
+
+/**
  * "Run workflow from spec…" — entry point for the spec-driven flow.
  *
  * Asks for: which workflow, what to call the workitem, where the spec docs
@@ -20,9 +41,26 @@ export function WorkflowFromSpecModal() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<string>('');
   const [workItemName, setWorkItemName] = useState<string>('');
   const [slug, setSlug] = useState<string>('');
-  const [specDocsRaw, setSpecDocsRaw] = useState<string>('');
+  const [specDocs, setSpecDocs] = useState<string[]>([]);
+  const [pathInput, setPathInput] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function addSpecDocs(paths: string[]): void {
+    const cleaned = paths.map((p) => p.trim()).filter(Boolean);
+    if (cleaned.length === 0) return;
+    setSpecDocs((existing) => [...existing, ...cleaned.filter((p) => !existing.includes(p))]);
+  }
+
+  async function browseForSpecDocs(): Promise<void> {
+    const picked = await window.electronAPI?.pickFiles?.({ title: 'Pick spec docs' });
+    if (picked?.ok && picked.paths) addSpecDocs(picked.paths);
+  }
+
+  function addFromInput(): void {
+    addSpecDocs(parsePastedPaths(pathInput));
+    setPathInput('');
+  }
 
   // Suggest the next slug — find the highest existing 4-digit prefix and add 100.
   function suggestSlug(workItem: string): string {
@@ -99,12 +137,11 @@ export function WorkflowFromSpecModal() {
       setError(`Napkin "${slug}" already exists. Pick a different slug.`);
       return;
     }
-    const specDocs = specDocsRaw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
-    if (specDocs.length === 0) {
-      setError('At least one spec doc path is required (one per line).');
+    // Anything still sitting in the input counts too — saves a click on Add.
+    const pendingFromInput = parsePastedPaths(pathInput).filter((p) => !specDocs.includes(p));
+    const allSpecDocs = [...specDocs, ...pendingFromInput];
+    if (allSpecDocs.length === 0) {
+      setError('At least one spec doc is required — browse or type a path.');
       return;
     }
 
@@ -114,7 +151,7 @@ export function WorkflowFromSpecModal() {
         workflowName: selectedWorkflow,
         napkinSlug: slug.trim(),
         workItemName: workItemName.trim(),
-        specDocs,
+        specDocs: allSpecDocs,
       });
       if (res?.ok) {
         openWorkflowDashboard();
@@ -212,22 +249,99 @@ export function WorkflowFromSpecModal() {
           style={{ ...inputStyle, marginBottom: 12 }}
         />
 
-        <label style={labelStyle}>Spec docs (one path per line, project-relative or absolute)</label>
-        <textarea
-          value={specDocsRaw}
-          onChange={(e) => setSpecDocsRaw(e.target.value)}
-          placeholder={`docs/specs/coda-apps-registry/01-spec.md\ndocs/specs/coda-apps-registry/02-architecture.md`}
-          rows={5}
-          style={{
-            ...inputStyle,
-            width: '100%',
-            resize: 'vertical',
-            fontFamily: 'inherit',
-            fontSize: 12,
-            lineHeight: 1.5,
-            marginBottom: 8,
-          }}
-        />
+        <label style={labelStyle}>Spec docs (project-relative or absolute)</label>
+        {specDocs.length > 0 && (
+          <div
+            style={{
+              border: '1px solid #3c3c3c',
+              borderRadius: 3,
+              marginBottom: 6,
+              maxHeight: 140,
+              overflowY: 'auto',
+            }}
+          >
+            {specDocs.map((doc) => (
+              <div
+                key={doc}
+                title={doc}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '3px 8px',
+                  fontSize: 12,
+                  borderBottom: '1px solid #2d2d2d',
+                }}
+              >
+                {/* direction:rtl keeps the filename end visible when the path overflows */}
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    direction: 'rtl',
+                    textAlign: 'left',
+                    color: '#d4d4d4',
+                  }}
+                >
+                  {doc}
+                </span>
+                <button
+                  onClick={() => setSpecDocs((docs) => docs.filter((d) => d !== doc))}
+                  title="Remove"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#6b7280',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    padding: '0 2px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          <input
+            type="text"
+            value={pathInput}
+            onChange={(e) => setPathInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addFromInput();
+              }
+            }}
+            onPaste={(e) => {
+              // Terminal copies of long paths carry hard newlines — normalize
+              // them into whole paths instead of letting them break the value.
+              const pasted = e.clipboardData.getData('text');
+              if (pasted.includes('\n')) {
+                e.preventDefault();
+                addSpecDocs(parsePastedPaths(pathInput + pasted));
+                setPathInput('');
+              }
+            }}
+            placeholder="type or paste a path, Enter to add"
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <button
+            onClick={addFromInput}
+            disabled={!pathInput.trim()}
+            style={{ ...btnStyle, width: 'auto', padding: '0 10px' }}
+          >
+            Add
+          </button>
+          <button onClick={browseForSpecDocs} style={{ ...btnStyle, width: 'auto', padding: '0 10px' }}>
+            Browse…
+          </button>
+        </div>
 
         {error && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 8 }}>{error}</div>}
 

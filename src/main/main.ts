@@ -186,6 +186,19 @@ ipcMain.handle('project:pick-dir', async (_event, opts: { title?: string } = {})
   return { ok: true, path: result.filePaths[0] };
 });
 
+ipcMain.handle('dialog:pick-files', async (_event, opts: { title?: string } = {}) => {
+  // Native multi-select file picker — used by the spec-docs list so long
+  // paths never have to be typed or pasted at all.
+  const cwd = process.env['NAP_CWD'];
+  const pickResult = await dialog.showOpenDialog({
+    title: opts.title || 'Pick files',
+    defaultPath: cwd || undefined,
+    properties: ['openFile', 'multiSelections'],
+  });
+  if (pickResult.canceled || pickResult.filePaths.length === 0) return { ok: false };
+  return { ok: true, paths: pickResult.filePaths };
+});
+
 ipcMain.handle('project:open', async (_event, projectPath: string) => {
   // Validate: dir must exist and contain .nap/nepics (proves it's initialized).
   if (typeof projectPath !== 'string' || !projectPath) {

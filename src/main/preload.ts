@@ -166,4 +166,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('napkin:add-stage', opts),
   readFile: (path: string) => ipcRenderer.invoke('file:read', path),
   writeFile: (path: string, content: string) => ipcRenderer.invoke('file:write', path, content),
+  pickFiles: (opts?: { title?: string }) => ipcRenderer.invoke('dialog:pick-files', opts ?? {}),
 });

@@ -116,6 +116,7 @@ declare global {
         error?: boolean;
         message?: string;
       }>;
+      pickFiles?: (opts?: { title?: string }) => Promise<{ ok: boolean; paths?: string[] }>;
     };
   }
 }
