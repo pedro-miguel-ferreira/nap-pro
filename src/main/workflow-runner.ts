@@ -1,6 +1,5 @@
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
-import { spawn as childSpawn } from 'child_process';
 import type { NapModel } from './model';
 import type { PtySpawner } from './pty-spawner';
 import type {
@@ -196,7 +195,7 @@ export async function runWorkflow(
 
     const groupPromises = group.map((stage) => {
       const runOne = stage.kind === 'open-pr'
-        ? runOpenPrStage(stage, napkinSlug, def, runId, deps)
+        ? runOpenPrStage(stage, napkinSlug, parentId, def, runId, deps)
         : runStage(stage, napkinSlug, parentId, def, runId, deps);
       return runOne.then((r) => {
         stageResults.push({ name: stage.name, status: r });
@@ -389,7 +388,7 @@ async function runStage(
   // Resolve fresh — id may have changed via reset above.
   const agent = model.getAllAgents().find((a) => a.id === createdId);
   if (!agent) {
-    registry.markStageEnd(runId, stage.name, 'failed');
+    registry.markStageEnd(runId, stage.name, 'failed', 'stage agent could not be created');
     return 'failed';
   }
 
@@ -436,7 +435,7 @@ async function runStage(
     const liveId = refreshed?.id ?? agent.id;
     registry.markStageStart(runId, stage.name, liveId);
     const result = await awaitDoneOrExit(model, liveId);
-    registry.markStageEnd(runId, stage.name, result);
+    registry.markStageEnd(runId, stage.name, result, stageFailureHint(result));
     return result;
   } else {
     await fsPromises.writeFile(
@@ -454,8 +453,9 @@ async function runStage(
       `read ${promptPath} and follow its instructions`,
       ptySpawner,
     );
-  } catch {
-    registry.markStageEnd(runId, stage.name, 'failed');
+  } catch (err) {
+    const startError = err instanceof Error ? err.message : String(err);
+    registry.markStageEnd(runId, stage.name, 'failed', `agent failed to start: ${startError}`);
     return 'failed';
   }
 
@@ -464,8 +464,15 @@ async function runStage(
   const liveId = startResult.id;
   registry.markStageStart(runId, stage.name, liveId);
   const result = await awaitDoneOrExit(model, liveId);
-  registry.markStageEnd(runId, stage.name, result);
+  registry.markStageEnd(runId, stage.name, result, stageFailureHint(result));
   return result;
+}
+
+/** Dashboard hint for the common failure shape — agent died without `nap-pro done`. */
+function stageFailureHint(result: 'completed' | 'failed'): string | undefined {
+  return result === 'failed'
+    ? 'agent exited without running `nap-pro done` — check its terminal / response.md'
+    : undefined;
 }
 
 /**
@@ -521,8 +528,12 @@ function extractStageOrdinal(name: string): number | null {
 }
 
 /**
- * Inline stage: pushes the worktree branch and opens a draft PR via `gh`.
- * No LLM in the loop — mechanical operation using the napkin doc as the body.
+ * Open-PR stage: spawns a dedicated agent whose only job is getting the
+ * napkin branch onto GitHub as a draft PR. An agent (not inline shell)
+ * because the steps need judgment and a real shell environment: committing
+ * whatever the build agents left uncommitted, creating the GitHub repo when
+ * the project has no `origin` yet, pushing the base branch on first publish,
+ * and writing a sensible title/body from the napkin doc.
  *
  * Place this between build stages and reviewer stages in a workflow so the
  * reviewers can post tagged `gh pr comment`s on a real PR instead of buffering
@@ -531,97 +542,111 @@ function extractStageOrdinal(name: string): number | null {
 async function runOpenPrStage(
   stage: OpenPrStage,
   napkinSlug: string,
+  parentId: string | undefined,
   def: WorkflowDef,
   runId: string,
   deps: RunWorkflowDeps,
-): Promise<'completed' | 'failed'> {
+): Promise<'completed' | 'failed' | 'awaiting-architect'> {
   const { model, registry } = deps;
-  registry.markStageStart(runId, stage.name, undefined);
 
   const napkin = model.getNapkins().find((n) => n.slug === napkinSlug);
   if (!napkin?.worktreePath) {
-    // eslint-disable-next-line no-console
-    console.warn(`[workflow] open-pr stage skipped — napkin ${napkinSlug} has no worktree`);
-    registry.markStageEnd(runId, stage.name, 'failed');
-    return 'failed';
-  }
-
-  const branch = `nap-pro/${napkinSlug}`;
-  const baseBranch = def.baseBranch?.trim() || 'main';
-  const prefix = (stage.titlePrefix ?? def.prTitlePrefix ?? '').trim();
-  const napkinDocPath = path.join(napkin.path, `${napkinSlug}.nap.md`);
-
-  let napkinBody: string;
-  try {
-    napkinBody = await fsPromises.readFile(napkinDocPath, 'utf-8');
-  } catch {
-    // eslint-disable-next-line no-console
-    console.warn(`[workflow] open-pr stage couldn't read ${napkinDocPath}`);
-    registry.markStageEnd(runId, stage.name, 'failed');
-    return 'failed';
-  }
-  const title = extractPrTitle(napkinBody, prefix, napkinSlug);
-  const body = buildPrBody(napkinBody);
-
-  try {
-    await runShell('git', ['push', '-u', 'origin', branch], napkin.worktreePath);
-    await runShell(
-      'gh',
-      [
-        'pr', 'create', '--draft',
-        '--base', baseBranch,
-        '--head', branch,
-        '--title', title,
-        '--body', body,
-      ],
-      napkin.worktreePath,
+    registry.markStageEnd(
+      runId,
+      stage.name,
+      'failed',
+      `napkin "${napkinSlug}" has no worktree — nothing to push`,
     );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // eslint-disable-next-line no-console
-    console.warn(`[workflow] open-pr stage failed: ${msg}`);
-    registry.markStageEnd(runId, stage.name, 'failed');
     return 'failed';
   }
 
-  registry.markStageEnd(runId, stage.name, 'completed');
-  return 'completed';
+  const agentStage: AgentStage = {
+    kind: 'agent',
+    name: stage.name,
+    role: 'open-pr',
+    model: null,
+    promptSource: 'custom',
+    customPrompt: buildOpenPrAgentPrompt({
+      workflowName: def.name,
+      napkinSlug,
+      napkinDocPath: path.join(napkin.path, `${napkinSlug}.nap.md`),
+      worktreePath: napkin.worktreePath,
+      projectCwd: deps.projectCwd,
+      branch: `nap-pro/${napkinSlug}`,
+      baseBranch: def.baseBranch?.trim() || 'main',
+      prefix: (stage.titlePrefix ?? def.prTitlePrefix ?? '').trim(),
+      runId,
+    }),
+    skipContext: true,
+  };
+  return runStage(agentStage, napkinSlug, parentId, def, runId, deps);
 }
 
-function extractPrTitle(napkinBody: string, prefix: string, slug: string): string {
-  // First top-level heading wins; otherwise fall back to the slug. Keeps the
-  // PR title deterministic without an LLM.
-  const firstHeading = napkinBody.match(/^#\s+(.+)$/m);
-  const base = firstHeading?.[1]?.trim() || slug;
-  return prefix ? `${prefix} ${base}` : base;
-}
+/** Self-contained prompt for the open-pr agent — no role doc dependency. */
+export function buildOpenPrAgentPrompt(args: {
+  workflowName: string;
+  napkinSlug: string;
+  napkinDocPath: string;
+  worktreePath: string;
+  projectCwd: string;
+  branch: string;
+  baseBranch: string;
+  prefix: string;
+  runId: string;
+}): string {
+  const titlePrefix = args.prefix ? `${args.prefix} ` : '';
+  const repoName = path.basename(args.projectCwd);
+  return `You are the open-pr stage of workflow "${args.workflowName}" for napkin "${args.napkinSlug}" (run ${args.runId.slice(0, 8)}).
 
-function buildPrBody(napkinBody: string): string {
-  return `## Napkin
+Your ONLY job: get this napkin's work onto GitHub as a draft PR, then report the URL. Do not review, refactor, or extend the work.
 
-${napkinBody.trim()}
+Context:
+- Worktree (the branch's checkout): ${args.worktreePath}
+- Branch: ${args.branch}
+- Base branch: ${args.baseBranch}
+- Project root (main checkout of the same repo): ${args.projectCwd}
+- Napkin doc (source for title + PR body): ${args.napkinDocPath}
+
+Steps:
+
+1. \`cd ${args.worktreePath}\` and check \`git status\`. If the build agents left uncommitted changes, commit them — everything that belongs to this napkin's work, with a clean descriptive message.
+
+2. Check the remote: \`git remote get-url origin\`.
+   - If origin exists, continue to step 3.
+   - If there is NO origin, this project isn't on GitHub yet — publish it:
+     a. \`cd ${args.projectCwd}\`
+     b. \`gh repo create ${repoName} --private --source=. --remote=origin --push\` (pushes the current base branch too)
+     c. If the repo name is taken, pick a sensible variant.
+     d. Return to the worktree: \`cd ${args.worktreePath}\`
+
+3. Make sure the base branch exists on the remote (\`git ls-remote --heads origin ${args.baseBranch}\`); push it from the project root if missing.
+
+4. Push the napkin branch: \`git push -u origin ${args.branch}\`.
+
+5. Read ${args.napkinDocPath}. Craft a descriptive PR title starting with "${titlePrefix}" and open the draft PR:
+
+\`\`\`bash
+gh pr create --draft --base ${args.baseBranch} --head ${args.branch} \\
+  --title "${titlePrefix}<descriptive title from the napkin>" \\
+  --body "$(cat <<'EOF'
+## Napkin
+
+<contents of the napkin doc>
 
 ## Summary
 
-_Reviewers will leave structured comments below; squash these into a summary before merging._
+<one paragraph on what shipped>
 
 ## Test plan
 
-- [ ] _see test-eng output and any \`gh pr comment\`s tagged \`[Eng Reviewer]\` / \`[Product Reviewer]\`_
-`;
-}
+- [ ] <concrete checks based on what the build/test stages did>
+EOF
+)"
+\`\`\`
 
-function runShell(file: string, args: string[], cwd: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proc = childSpawn(file, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stderr = '';
-    proc.stderr?.on('data', (d) => { stderr += d.toString(); });
-    proc.on('error', reject);
-    proc.on('exit', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${file} ${args.join(' ')} exited ${code}: ${stderr.trim()}`));
-    });
-  });
+6. Verify with \`gh pr view ${args.branch} --json url\` and put the PR URL on the FIRST line of your response.
+
+If you hit an unrecoverable blocker (gh not authenticated, no GitHub access, push rejected), do NOT silently give up: put "PR NOT CREATED: <exact error>" on the first line of your response, followed by the command the human should run to fix it.`;
 }
 
 /**

@@ -257,9 +257,6 @@ function StageRow({
     <div
       onClick={clickable ? onClick : undefined}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
         padding: '3px 6px',
         borderRadius: 3,
         cursor: clickable ? 'pointer' : 'default',
@@ -272,40 +269,57 @@ function StageRow({
         e.currentTarget.style.background = 'transparent';
       }}
     >
-      <span
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: color,
-          flexShrink: 0,
-          animation: stage.status === 'running' ? 'blink 1s step-end infinite' : 'none',
-        }}
-      />
-      <span style={{ color: '#cccccc', minWidth: 200 }}>{stage.name}</span>
-      <span style={{ color: '#6b7280', fontSize: 11, minWidth: 60 }}>{stage.role}</span>
-      {stage.model && (
-        <span style={{ color: '#9ca3af', fontSize: 10 }}>
-          {stage.model.replace(/^claude-/, '')}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: color,
+            flexShrink: 0,
+            animation: stage.status === 'running' ? 'blink 1s step-end infinite' : 'none',
+          }}
+        />
+        <span style={{ color: '#cccccc', minWidth: 200 }}>{stage.name}</span>
+        <span style={{ color: '#6b7280', fontSize: 11, minWidth: 60 }}>{stage.role}</span>
+        {stage.model && (
+          <span style={{ color: '#9ca3af', fontSize: 10 }}>
+            {stage.model.replace(/^claude-/, '')}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        <span
+          style={{
+            color,
+            fontSize: 10,
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            minWidth: 64,
+            textAlign: 'right',
+          }}
+        >
+          {STAGE_LABEL[stage.status]}
         </span>
-      )}
-      <span style={{ flex: 1 }} />
-      <span
-        style={{
-          color,
-          fontSize: 10,
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          minWidth: 64,
-          textAlign: 'right',
-        }}
-      >
-        {STAGE_LABEL[stage.status]}
-      </span>
-      {stage.startedAt && (
-        <span style={{ color: '#6b7280', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
-          {formatDuration(stage.startedAt, stage.endedAt)}
-        </span>
+        {stage.startedAt && (
+          <span style={{ color: '#6b7280', fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
+            {formatDuration(stage.startedAt, stage.endedAt)}
+          </span>
+        )}
+      </div>
+      {/* Failure reason — the "why" that used to only reach main's console */}
+      {stage.message && (
+        <div
+          style={{
+            marginLeft: 14,
+            marginTop: 2,
+            color: '#f87171',
+            fontSize: 11,
+            lineHeight: 1.4,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {stage.message}
+        </div>
       )}
     </div>
   );

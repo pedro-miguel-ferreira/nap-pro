@@ -318,27 +318,14 @@ nap-pro permission-response [--list] --agent <id> --decision allow|deny [--messa
 
 ## Known issues
 
-- **Open PR does not work yet (still to be fixed).** Workflows can include an
-  `open-pr` stage — a synthetic stage the runner handles inline, meant to
-  `git push -u origin nap-pro/<slug>` the napkin's worktree branch and open a
-  draft PR with `gh pr create --draft` (napkin doc as the body). The runner also
-  auto-inserts one before reviewer stages, and there's a legacy path that pokes
-  the architect to do it via its Bash tool. **This flow is currently broken** —
-  don't rely on the automatic stage to create PRs.
-
-  **Workaround (manual, in-app):**
-  1. Ask the **last agent** in the flow to open the PR itself — it already has
-     the worktree as its cwd and a Bash tool. `poke` (or `ask`) it to push the
-     branch and open a draft PR, e.g.:
-     ```
-     nap-pro poke <last-agent> "Push this worktree branch and open a draft PR with `gh pr create --draft`, then reply with the PR URL."
-     ```
-  2. Take the PR URL it reports back, then on the napkin use **Add stage…** to
-     add a **reviewer** stage manually, passing the PR URL in its prompt (custom
-     prompt source) so the reviewer reviews that PR directly.
-
-  This keeps the review step in the normal workflow without depending on the
-  broken auto `open-pr` stage.
+- **Open PR requires GitHub access from the agent's shell.** The `open-pr`
+  stage spawns a dedicated agent that commits any leftover work, ensures the
+  project has an `origin` remote (creating a private GitHub repo named after
+  the project dir when there is none), pushes the branch, and opens a draft PR
+  with `gh pr create --draft` (napkin doc as the body). It needs `gh` installed
+  and authenticated (`gh auth status`). If the PR can't be created, the agent
+  reports `PR NOT CREATED: <reason>` in its response and the stage's failure
+  reason shows in the runs dashboard.
 
 ## Keyboard shortcuts
 

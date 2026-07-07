@@ -58,10 +58,11 @@ export type PromptSource = 'template' | 'custom' | 'architect';
 /**
  * Stages come in two flavors:
  *   - `agent` (default) — spawns a claude session in the worktree with a role + prompt
- *   - `open-pr` — synthetic stage handled inline by the runner: pushes the worktree
- *     branch and opens a draft PR via `gh pr create`, using the napkin doc as the body.
- *     Place this between the build stages and the reviewer stages so reviewers can
- *     post tagged `gh pr comment`s on a PR that actually exists.
+ *   - `open-pr` — spawns a dedicated agent with a self-contained prompt that commits
+ *     leftover work, ensures a GitHub remote exists (creating a private repo when the
+ *     project has none), pushes the branch, and opens a draft PR via `gh pr create`
+ *     using the napkin doc as the body. Place this between the build stages and the
+ *     reviewer stages so reviewers can post tagged `gh pr comment`s on a real PR.
  */
 export interface AgentStage {
   /** Defaults to 'agent' when omitted. */
@@ -202,6 +203,8 @@ export interface WorkflowStageRun {
   endedAt?: number;
   /** Index into the workflow's group ordering — same number = parallel siblings. */
   groupIndex: number;
+  /** Why the stage failed — shown in the runs dashboard. Only set on failure. */
+  message?: string;
 }
 
 export interface WorkflowRun {

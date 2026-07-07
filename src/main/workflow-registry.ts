@@ -82,13 +82,19 @@ export class WorkflowRegistry {
     this.emit(entry.run);
   }
 
-  markStageEnd(runId: string, stageName: string, status: WorkflowStageRunStatus): void {
+  markStageEnd(
+    runId: string,
+    stageName: string,
+    status: WorkflowStageRunStatus,
+    message?: string,
+  ): void {
     const entry = this.entries.get(runId);
     if (!entry) return;
     const stage = entry.run.stages.find((s) => s.name === stageName);
     if (!stage) return;
     stage.status = status;
     stage.endedAt = Date.now();
+    if (message) stage.message = message;
     this.emit(entry.run);
   }
 
