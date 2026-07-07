@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { join, resolve as pathResolve, sep as pathSep } from 'path';
 import * as fsSync from 'fs';
+import * as os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { readUserState, recordProjectOpen, forgetProject } from './user-state';
@@ -287,22 +288,38 @@ function getFileAccessRoots(cwd: string): string[] {
   return [cwd, ...trackedWorktrees];
 }
 
+/**
+ * Whether the markdown viewer/editor may touch this path. Two tiers:
+ *   1. Project cwd + tracked worktrees — full access, including `.nap/` and
+ *      other dot-dirs (napkin scaffolding lives there).
+ *   2. Anywhere else under the user's home — allowed, EXCEPT paths with a
+ *      hidden (dot-prefixed) segment. Agents routinely reference files in
+ *      other repos and other nap projects' worktrees; the dot-segment rule
+ *      keeps ~/.ssh, ~/.aws, other projects' .git/.nap internals off-limits.
+ */
+function isFileAccessAllowed(p: string, cwd: string): boolean {
+  if (getFileAccessRoots(cwd).some((root) => isPathInside(p, root))) return true;
+  const home = os.homedir();
+  if (!isPathInside(p, home)) return false;
+  const relFromHome = pathResolve(p).slice(pathResolve(home).length + 1);
+  return !relFromHome.split(pathSep).some((segment) => segment.startsWith('.'));
+}
+
 ipcMain.handle('file:read', async (_event, p: string) => {
   // Read an arbitrary file's contents — used by the in-app markdown viewer
   // for napkin scaffolding files, response.md, design.md, agent-edited files
-  // inside worktrees, etc. Security clamp: only the project cwd and tracked
-  // worktrees (see getFileAccessRoots). Anything outside is refused.
+  // inside worktrees, cross-project references, etc. Security clamp:
+  // see isFileAccessAllowed.
   const cwd = process.env['NAP_CWD'];
   if (!cwd) return { error: true, message: 'no project loaded' };
   if (typeof p !== 'string' || !p) {
     return { error: true, message: 'invalid path' };
   }
 
-  const allowed = getFileAccessRoots(cwd);
-  if (!allowed.some((root) => isPathInside(p, root))) {
+  if (!isFileAccessAllowed(p, cwd)) {
     return {
       error: true,
-      message: 'refusing to read paths outside the current project or its tracked worktrees',
+      message: 'refusing to read paths outside your home directory or inside hidden dirs',
     };
   }
   if (!fsSync.existsSync(p)) {
@@ -320,8 +337,7 @@ ipcMain.handle('file:read', async (_event, p: string) => {
 
 ipcMain.handle('file:write', async (_event, p: string, content: string) => {
   // Write a file's contents — used by the markdown editor to save user edits.
-  // Same two-tier security clamp as `file:read`: must be inside NAP_CWD or a
-  // tracked worktree. Refuses anything else.
+  // Same security clamp as `file:read`: see isFileAccessAllowed.
   const cwd = process.env['NAP_CWD'];
   if (!cwd) return { error: true, message: 'no project loaded' };
   if (typeof p !== 'string' || !p) {
@@ -330,11 +346,10 @@ ipcMain.handle('file:write', async (_event, p: string, content: string) => {
   if (typeof content !== 'string') {
     return { error: true, message: 'content must be a string' };
   }
-  const allowed = getFileAccessRoots(cwd);
-  if (!allowed.some((root) => isPathInside(p, root))) {
+  if (!isFileAccessAllowed(p, cwd)) {
     return {
       error: true,
-      message: 'refusing to write paths outside the current project or its tracked worktrees',
+      message: 'refusing to write paths outside your home directory or inside hidden dirs',
     };
   }
   try {
