@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePastedPaths } from '../src/renderer/WorkflowFromSpecModal';
+import { parsePastedPaths } from '../src/renderer/PathListInput';
 
 describe('parsePastedPaths', () => {
   it('single path stays one path', () => {

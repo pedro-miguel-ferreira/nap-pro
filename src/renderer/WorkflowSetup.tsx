@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNapStore } from './store';
+import { PathListInput } from './PathListInput';
 import type { AgentStage, OpenPrStage, WorkflowDef, WorkflowStage, PromptSource, BranchInfo, StageStats } from '../shared/bridge-types';
 
 const NAME_RE = /^[a-z0-9_-]+$/i;
@@ -577,28 +578,11 @@ export function WorkflowSetup() {
                 )}
 
                 <div style={{ marginTop: 12 }}>
-                  <label style={labelStyle}>Reference docs (one path per line)</label>
-                  <textarea
-                    value={(draft.contextFiles ?? []).join('\n')}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        contextFiles: e.target.value
-                          .split('\n')
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    placeholder={`docs/specs/xpto.md\ndocs/architecture/overview.md`}
-                    rows={4}
-                    style={{
-                      ...inputStyle,
-                      width: '100%',
-                      resize: 'vertical',
-                      fontFamily: 'inherit',
-                      fontSize: 12,
-                      lineHeight: 1.5,
-                    }}
+                  <label style={labelStyle}>Reference docs</label>
+                  <PathListInput
+                    paths={draft.contextFiles ?? []}
+                    onChange={(paths) => setDraft({ ...draft, contextFiles: paths })}
+                    browseTitle="Pick reference docs"
                   />
                   <div style={{ color: '#6b7280', fontSize: 10, marginTop: 4 }}>
                     Appended to every stage's prompt.md (paths resolved against project root). Use the per-stage opt-out below to skip.
