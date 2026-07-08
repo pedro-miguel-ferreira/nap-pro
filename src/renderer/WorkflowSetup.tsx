@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNapStore } from './store';
+import { CLAUDE_MODELS } from '../shared/claude-models';
 import { PathListInput } from './PathListInput';
 import type { AgentStage, OpenPrStage, WorkflowDef, WorkflowStage, PromptSource, BranchInfo, StageStats } from '../shared/bridge-types';
 
@@ -7,9 +8,7 @@ const NAME_RE = /^[a-z0-9_-]+$/i;
 
 const MODELS: Array<{ id: string; label: string }> = [
   { id: '', label: 'default (CC chooses)' },
-  { id: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
+  ...CLAUDE_MODELS,
 ];
 
 const PROMPT_SOURCES: Array<{ id: PromptSource; label: string; help: string }> = [
@@ -649,9 +648,11 @@ export function WorkflowSetup() {
                       style={{ ...selectStyle, width: 200 }}
                     >
                       <option value="">default</option>
-                      <option value="claude-opus-4-7">Opus 4.7</option>
-                      <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-                      <option value="claude-haiku-4-5">Haiku 4.5</option>
+                      {CLAUDE_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 )}

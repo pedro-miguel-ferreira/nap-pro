@@ -3,7 +3,9 @@ import { useNapStore } from './store';
 import type { AgentCostSummary, CostQueryResult, AgentState } from '../shared/bridge-types';
 
 const MODEL_COLORS: Record<string, string> = {
+  'claude-fable-5': '#f472b6',
   'claude-opus-4-7': '#a855f7',
+  'claude-sonnet-5': '#38bdf8',
   'claude-sonnet-4-6': '#3b82f6',
   'claude-haiku-4-5': '#22c55e',
 };

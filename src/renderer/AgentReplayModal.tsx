@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNapStore } from './store';
+import { CLAUDE_MODELS } from '../shared/claude-models';
 import type { AgentState, NapkinState } from '../shared/bridge-types';
 
 const MODELS: Array<{ id: string; label: string }> = [
   { id: '', label: 'default (CC chooses)' },
-  { id: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5' },
+  ...CLAUDE_MODELS,
 ];
 
 function findAgent(

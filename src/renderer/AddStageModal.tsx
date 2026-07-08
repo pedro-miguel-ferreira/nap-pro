@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNapStore } from './store';
+import { CLAUDE_MODELS } from '../shared/claude-models';
 
 /**
  * Post-hoc stage add. Pick a role, optionally a model, click Spawn. The new
@@ -129,9 +130,11 @@ export function AddStageModal() {
           style={{ ...inputStyle, marginBottom: 12 }}
         >
           <option value="">default (CC chooses)</option>
-          <option value="claude-opus-4-7">Opus 4.7</option>
-          <option value="claude-sonnet-4-6">Sonnet 4.6</option>
-          <option value="claude-haiku-4-5">Haiku 4.5</option>
+          {CLAUDE_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
         </select>
 
         {error && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 8 }}>{error}</div>}

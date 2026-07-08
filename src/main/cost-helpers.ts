@@ -7,7 +7,9 @@ import * as os from 'os';
  * cost attribution, not invoicing. Update as Anthropic publishes new rates.
  */
 const RATES = {
-  'claude-opus-4-7':   { in: 15.0, out: 75.0, cacheWrite: 18.75, cacheRead: 1.50 },
+  'claude-fable-5':    { in: 10.0, out: 50.0, cacheWrite: 12.50, cacheRead: 1.00 },
+  'claude-opus-4-7':   { in: 5.0,  out: 25.0, cacheWrite: 6.25,  cacheRead: 0.50 },
+  'claude-sonnet-5':   { in: 3.0,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
   'claude-sonnet-4-6': { in: 3.0,  out: 15.0, cacheWrite: 3.75,  cacheRead: 0.30 },
   'claude-haiku-4-5':  { in: 1.0,  out: 5.0,  cacheWrite: 1.25,  cacheRead: 0.10 },
 } as const;
