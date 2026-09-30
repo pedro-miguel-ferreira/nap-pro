@@ -1,7 +1,7 @@
 import type { NapModel } from './model';
 import type { PtySpawner } from './pty-spawner';
 import { computeResumeActions } from './resume';
-import { isResumeMissingSession } from './resume-detection';
+import { getBackend, prepareRunDir, resolveRunDir } from './agent-backend';
 
 /** Threshold for fast-exit detection (same as v2 main.ts:191) */
 const RESUME_FAIL_THRESHOLD_MS = 5000;
@@ -25,16 +25,31 @@ export async function startAgents(model: NapModel, ptySpawner: PtySpawner): Prom
     // Skip agents whose ptys are already running (e.g., after nepic switch)
     if (ptySpawner.isRunning(decision.agentId)) continue;
 
+    const backend = getBackend();
+    const cwd = model.getAgentCwd(decision.agentId);
+
+    // Backends that can tell from disk that the session is gone (Cursor —
+    // resuming a missing chat silently starts an empty one) skip the spawn
+    // and take the same path as a failed resume.
+    if (
+      decision.action === 'resume' &&
+      backend.sessionExists(resolveRunDir(cwd), decision.agentId) === false
+    ) {
+      await model.setAgentArchived(decision.agentId);
+      continue;
+    }
+
     // Track resume spawn time for fast-exit detection
     if (decision.action === 'resume') {
       resumeSpawnTimes.set(decision.agentId, Date.now());
     }
 
+    prepareRunDir(backend, cwd);
     ptySpawner.spawn({
       id: decision.agentId,
       file: decision.file!,
       args: decision.args!,
-      cwd: model.getAgentCwd(decision.agentId),
+      cwd,
     });
 
     // Register exit handler — fires when pty dies on its own (NOT on quit)
@@ -43,15 +58,16 @@ export async function startAgents(model: NapModel, ptySpawner: PtySpawner): Prom
       resumeSpawnTimes.delete(decision.agentId);
 
       // Resume failure detection: fast exit + was --resume + known "session gone"
-      // wording. Centralized in isResumeMissingSession so a CC rewording is a
-      // one-line fix instead of two silent regressions.
+      // wording. Centralized in the backend's resumeFailedOutput (Claude:
+      // isResumeMissingSession) so a rewording is a one-line fix instead of
+      // two silent regressions.
       if (
         decision.action === 'resume' &&
         spawnTime &&
         (Date.now() - spawnTime) < RESUME_FAIL_THRESHOLD_MS
       ) {
         const output = (ptySpawner as any).getOutputBuffer?.(decision.agentId) ?? '';
-        if (isResumeMissingSession(output)) {
+        if (backend.resumeFailedOutput(output)) {
           await model.setAgentArchived(decision.agentId);
           return;
         }
