@@ -4,6 +4,8 @@ import type { AgentCostSummary, CostQueryResult, AgentState } from '../shared/br
 
 const MODEL_COLORS: Record<string, string> = {
   'claude-fable-5': '#f472b6',
+  'claude-opus-5': '#7c3aed',
+  'claude-opus-4-8': '#9333ea',
   'claude-opus-4-7': '#a855f7',
   'claude-sonnet-5': '#38bdf8',
   'claude-sonnet-4-6': '#3b82f6',
