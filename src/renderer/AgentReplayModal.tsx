@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNapStore } from './store';
-import { useModelOptions, withSavedModel } from './model-options';
+import { useModelOptions, useDefaultModelLabel, pickerValue, withSavedModel } from './model-options';
 import type { AgentState, NapkinState } from '../shared/bridge-types';
 
 function findAgent(
@@ -29,6 +29,7 @@ export function AgentReplayModal() {
   const [editPrompt, setEditPrompt] = useState(false);
   const [busy, setBusy] = useState(false);
   const modelOptions = useModelOptions();
+  const defaultLabel = useDefaultModelLabel();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -122,14 +123,14 @@ export function AgentReplayModal() {
 
         <label style={labelStyle}>Model</label>
         <select
-          value={model}
+          value={pickerValue(modelOptions, model)}
           onChange={(e) => setModel(e.target.value)}
           style={{ ...inputStyle, marginBottom: 12 }}
         >
-          {[{ id: '', label: 'default' }, ...withSavedModel(modelOptions, model)].map((m) => (
+          {[{ id: '', label: defaultLabel }, ...withSavedModel(modelOptions, model)].map((m) => (
             <option key={m.id || 'default'} value={m.id}>
               {m.label}
-              {original.model === m.id ? ' (original)' : ''}
+              {original.model && pickerValue(modelOptions, original.model) === m.id ? ' (original)' : ''}
               {original.model == null && m.id === '' ? ' (original)' : ''}
             </option>
           ))}

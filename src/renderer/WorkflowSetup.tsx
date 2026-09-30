@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNapStore } from './store';
-import { useModelOptions, withSavedModel } from './model-options';
+import { useModelOptions, useDefaultModelLabel, pickerValue, withSavedModel } from './model-options';
 import { PathListInput } from './PathListInput';
 import type { AgentStage, OpenPrStage, WorkflowDef, WorkflowStage, PromptSource, BranchInfo, StageStats } from '../shared/bridge-types';
 
@@ -59,6 +59,7 @@ export function WorkflowSetup() {
   const target = useNapStore((s) => s.workflowSetupTarget);
   const close = useNapStore((s) => s.closeWorkflowSetup);
   const modelOptions = useModelOptions();
+  const defaultLabel = useDefaultModelLabel();
 
   const [workflows, setWorkflows] = useState<string[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
@@ -634,7 +635,7 @@ export function WorkflowSetup() {
                     </select>
                     <label style={{ ...labelStyle, marginBottom: 0, marginLeft: 8 }}>Model</label>
                     <select
-                      value={draft.scope.model ?? ''}
+                      value={pickerValue(modelOptions, draft.scope.model)}
                       onChange={(e) =>
                         setDraft({
                           ...draft,
@@ -643,7 +644,7 @@ export function WorkflowSetup() {
                       }
                       style={{ ...selectStyle, width: 200 }}
                     >
-                      <option value="">default</option>
+                      <option value="">{defaultLabel}</option>
                       {withSavedModel(modelOptions, draft.scope.model).map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.label}
@@ -822,6 +823,7 @@ function AgentStageRow({
   onMoveDown: () => void;
 }) {
   const modelOptions = useModelOptions();
+  const defaultLabel = useDefaultModelLabel();
   const onChange = (patch: Partial<AgentStage>): void =>
     update((s) => (s.kind === 'open-pr' ? s : { ...s, ...patch }));
   return (
@@ -873,11 +875,11 @@ function AgentStageRow({
         <div>
           <label style={labelStyle}>model</label>
           <select
-            value={stage.model ?? ''}
+            value={pickerValue(modelOptions, stage.model)}
             onChange={(e) => onChange({ model: e.target.value || null })}
             style={selectStyle}
           >
-            {[{ id: '', label: 'default' }, ...withSavedModel(modelOptions, stage.model)].map((m) => (
+            {[{ id: '', label: defaultLabel }, ...withSavedModel(modelOptions, stage.model)].map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
               </option>

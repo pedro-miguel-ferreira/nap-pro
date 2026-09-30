@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNapStore } from './store';
-import { useModelOptions } from './model-options';
+import { useModelOptions, useDefaultModelLabel } from './model-options';
 
 /**
  * Post-hoc stage add. Pick a role, optionally a model, click Spawn. The new
@@ -21,6 +21,7 @@ export function AddStageModal() {
   const [modelId, setModelId] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const modelOptions = useModelOptions();
+  const defaultLabel = useDefaultModelLabel();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -130,7 +131,7 @@ export function AddStageModal() {
           onChange={(e) => setModelId(e.target.value)}
           style={{ ...inputStyle, marginBottom: 12 }}
         >
-          <option value="">default</option>
+          <option value="">{defaultLabel}</option>
           {modelOptions.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
