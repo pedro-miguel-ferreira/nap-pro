@@ -14,6 +14,19 @@ import {
   findTemplatesDir as findTemplatesDirShared,
   copyDirRecursive,
 } from '../main/project-init';
+import {
+  getBackendByName,
+  isBackendName,
+  resolveBackendName,
+  BACKEND_NAMES,
+  type BackendName,
+} from '../main/agent-backend';
+import {
+  commandMatchesRules,
+  excludeGeneratedFiles,
+  readPermissionsFile,
+  writeGuardianHook,
+} from '../main/cursor-permissions';
 
 // --- Help text ---
 
@@ -44,7 +57,8 @@ Commands:
   resume <name>                 SIGCONT a paused agent
   worktree create|remove|list|path  Per-napkin git worktree management
   import-agents <nepic-dir>     Import existing agent dirs as archived
-  hook permission-request       CC PermissionRequest hook handler
+  hook permission-request       Claude Code PermissionRequest hook handler
+  hook before-shell             Cursor beforeShellExecution hook handler
   permission-response           Resolve a pending permission request
 
 Flags:
@@ -52,21 +66,25 @@ Flags:
 `;
 
 const COMMAND_HELP: Record<string, string> = {
-  setup: `Usage: nap-pro setup [--guardian] [--skills [--user]] [--import]
+  setup: `Usage: nap-pro setup [--backend claude|cursor] [--guardian] [--skills [--user]] [--import]
 
 Add capabilities to an existing project. Requires .nap/ to exist.
 
+  --backend <name>   Agent CLI to drive: claude (Claude Code, default) or
+                     cursor (Cursor's \`agent\`). Written to .nap/config.json
   --guardian         Add guardian agent + permission hook config
+                     (claude: .claude/settings.json; cursor: .cursor/hooks.json)
   --skills           Copy napkin skills to .claude/skills/
   --user             With --skills: install to ~/.claude/skills/ instead
   --import           Scan project, create markers for unmarked entities
   --help             Show this help
 `,
-  init: `Usage: nap-pro init [--name <name>] [--template <name>] [--guardian] [--add-skills [--user]]
+  init: `Usage: nap-pro init [--name <name>] [--template <name>] [--backend claude|cursor] [--guardian] [--add-skills [--user]]
 
 Bootstrap a project for agent collaboration.
 
   --name <name>       Project name (default: cwd basename)
+  --backend <name>    Agent CLI to drive: claude (default) or cursor
   --template <name>   Use a project template (copies seed mega-napkin)
   --template random   Pick a random template
   --list-templates    List available project templates
@@ -83,7 +101,8 @@ Launch Nap.app. Walks up from cwd to find .nap/, like git.
 `,
   doctor: `Usage: nap-pro doctor
 
-Diagnose project setup and conventions. Spawns claude with a diagnostic prompt.
+Diagnose project setup and conventions. Spawns the project's agent CLI
+(claude or Cursor's agent) with a diagnostic prompt.
 No running app required.
 
   --help            Show this help
@@ -105,7 +124,7 @@ All create commands output JSON to stdout.
 Start a pre-created agent by name.
 
   name              Agent name (exact match)
-  prompt            Optional first message to Claude
+  prompt            Optional first message to the agent
   --nepic <slug>    Disambiguate across nepics
   --help            Show this help
 `,
@@ -232,8 +251,11 @@ Import existing agent dirs (with prompt.md/response.md but no markers) as archiv
 `,
   hook: `Usage: nap-pro hook <event>
 
-Handle a CC hook event. Currently supported:
-  permission-request   Handle PermissionRequest hook (reads stdin JSON)
+Handle an agent CLI hook event. Currently supported:
+  permission-request   Claude Code PermissionRequest hook (reads stdin JSON)
+  before-shell         Cursor beforeShellExecution hook (reads stdin JSON);
+                       routes commands matching .nap/permissions.json "ask"
+                       rules to the guardian, allows everything else
 
 Reads NAP_SESSION_ID and NAP_SOCKET from environment.
   --help            Show this help
@@ -418,8 +440,12 @@ function inferRole(dirName: string): string {
   return dirName.replace(/^\d+-/, '');
 }
 
-/** Create guardian agent + PermissionRequest hook config. Idempotent. */
-function setupGuardian(cwd: string, nepicDir: string, templatesDir: string): void {
+/**
+ * Create guardian agent + permission hook config. Idempotent. Claude gets a
+ * PermissionRequest hook in .claude/settings.json; Cursor (no PermissionRequest
+ * event) gets a beforeShellExecution hook in .cursor/hooks.json.
+ */
+function setupGuardian(cwd: string, nepicDir: string, templatesDir: string, backend: BackendName): void {
   const guardianDir = path.join(nepicDir, '20-architects', '002-guardian');
   const markerPath = path.join(guardianDir, '.agent.nap.json');
 
@@ -442,6 +468,12 @@ function setupGuardian(cwd: string, nepicDir: string, templatesDir: string): voi
     if (fs.existsSync(guardianPromptSrc)) {
       fs.copyFileSync(guardianPromptSrc, path.join(guardianDir, 'prompt.md'));
     }
+  }
+
+  if (backend === 'cursor') {
+    writeGuardianHook(cwd);
+    excludeGeneratedFiles(cwd);
+    return;
   }
 
   // Ensure .claude/settings.json has PermissionRequest hook
@@ -587,15 +619,103 @@ function setupImport(cwd: string): void {
   }
 }
 
-// ── Claude command construction ──
-
-export function shellEscape(s: string): string {
-  return s.replace(/'/g, "'\\''");
+/**
+ * Validate `--backend` and persist it to .nap/config.json (merging with any
+ * existing keys). Exits on an unknown name. Returns the backend now in effect.
+ */
+function applyBackendFlag(cwd: string, flag: string | boolean | undefined): BackendName {
+  if (flag === undefined) return resolveBackendName(cwd);
+  if (!isBackendName(flag)) {
+    process.stderr.write(`invalid --backend — use one of: ${BACKEND_NAMES.join(', ')}\n`);
+    process.exit(1);
+  }
+  const configPath = path.join(cwd, '.nap', 'config.json');
+  let config: Record<string, unknown> = {};
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {
+    // missing / malformed — start fresh
+  }
+  config.backend = flag;
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+  return flag;
 }
 
-export function buildClaudeCommand(prompt: string): string {
-  if (!prompt) return 'claude --verbose';
-  return `claude --verbose '${shellEscape(prompt)}'`;
+/**
+ * Cursor `beforeShellExecution` hook. Cursor fires it for EVERY shell command
+ * (Claude's PermissionRequest only fires when CC would prompt), so this
+ * narrows to the commands matching the `ask` rules in .nap/permissions.json
+ * and routes only those to the guardian via the same socket flow as
+ * `hook permission-request`. Everything else is allowed immediately — the
+ * hard deny list lives in .cursor/cli.json and holds regardless.
+ *
+ * Output is Cursor's format: {"permission":"allow"|"deny", ...}.
+ */
+async function handleCursorBeforeShell(requestId: number): Promise<void> {
+  const allow = (): void => {
+    process.stdout.write(JSON.stringify({ permission: 'allow' }));
+  };
+
+  let stdinData = '';
+  for await (const chunk of process.stdin) {
+    stdinData += chunk;
+  }
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = JSON.parse(stdinData);
+  } catch {
+    // Not valid JSON — continue with empty payload
+  }
+  const command = (payload.command as string) || '';
+
+  // Not a nap-pro agent (e.g. the human running Cursor in this repo) — the
+  // guardian only arbitrates for agents nap-pro spawned.
+  const sessionId = process.env['NAP_SESSION_ID'];
+  if (!sessionId) {
+    allow();
+    return;
+  }
+
+  const roots = Array.isArray(payload.workspace_roots) ? (payload.workspace_roots as string[]) : [];
+  const projectRoot = process.env['NAP_CWD']
+    || findProjectRoot(process.cwd())
+    || (roots[0] ? findProjectRoot(roots[0]) : null);
+  const perms = projectRoot
+    ? readPermissionsFile(path.join(projectRoot, '.nap', 'permissions.json'))
+    : null;
+  if (!commandMatchesRules(command, perms?.permissions?.ask)) {
+    allow();
+    return;
+  }
+
+  const sock = resolveSocketOrDie();
+  const TIMEOUT_MS = 10 * 60 * 1000;
+  const res = await sendLongLived(sock, {
+    type: 'hook-permission-request',
+    id: requestId,
+    agentId: sessionId,
+    tool: 'Shell',
+    command,
+    payload,
+  }, TIMEOUT_MS);
+
+  const decision = res.decision as string | undefined;
+  if (decision === 'allow') {
+    allow();
+    return;
+  }
+  // deny — or no decision (timeout): Cursor has no dialog to fall back to
+  // under --force, so an unanswered request is a deny. `interrupt` has no
+  // Cursor equivalent; the message still reaches the agent.
+  const message = decision === 'deny'
+    ? ((res.message as string) || 'denied by guardian')
+    : 'no guardian decision (timed out)';
+  process.stdout.write(JSON.stringify({
+    permission: 'deny',
+    user_message: message,
+    agent_message: message,
+  }));
 }
 
 // --- Main ---
@@ -695,9 +815,11 @@ async function main(): Promise<void> {
         }
       }
 
-      // Handle --guardian: create guardian agent + PermissionRequest hook config
+      const initBackend = applyBackendFlag(cwd, flags['backend']);
+
+      // Handle --guardian: create guardian agent + permission hook config
       if (flags['guardian']) {
-        setupGuardian(cwd, nepicDir, templatesDir);
+        setupGuardian(cwd, nepicDir, templatesDir, initBackend);
       }
 
       process.stdout.write('Initialized NAP project in .nap/\n');
@@ -713,17 +835,18 @@ async function main(): Promise<void> {
         process.exit(1);
       }
 
-      const hasFlags = flags['guardian'] || flags['skills'] || flags['import'];
+      const hasFlags = flags['guardian'] || flags['skills'] || flags['import'] || flags['backend'];
       if (!hasFlags) {
         process.stderr.write(COMMAND_HELP['setup']);
         process.exit(1);
       }
 
       const templatesDir = findTemplatesDir();
+      const setupBackend = applyBackendFlag(cwd, flags['backend']);
 
       if (flags['guardian']) {
         const nepicDir = getActiveNepicDir(cwd);
-        setupGuardian(cwd, nepicDir, templatesDir);
+        setupGuardian(cwd, nepicDir, templatesDir, setupBackend);
       }
 
       if (flags['skills']) {
@@ -890,15 +1013,16 @@ async function main(): Promise<void> {
       // Assemble the combined prompt
       const combinedPrompt = `${preamble}\n\n## System anatomy\n\n${internalsBody}\n\n---\n\n${diagnosticPhases}`;
 
-      // Spawn claude in the current terminal
-      const doctorChild = spawn('claude', ['--verbose', combinedPrompt], {
+      // Spawn the project's agent CLI in the current terminal
+      const doctorBackend = getBackendByName(resolveBackendName(doctorProjectRoot));
+      const doctorChild = spawn(doctorBackend.binary, doctorBackend.buildStandaloneArgs(combinedPrompt), {
         stdio: 'inherit',
         cwd: doctorProjectRoot,
       });
 
       doctorChild.on('error', (err: NodeJS.ErrnoException) => {
         if (err.code === 'ENOENT') {
-          process.stderr.write('claude not found on PATH\n');
+          process.stderr.write(`${doctorBackend.binary} not found on PATH\n`);
           process.exit(1);
         }
         throw err;
@@ -1541,6 +1665,10 @@ async function main(): Promise<void> {
 
     case 'hook': {
       const subcommand = args[0];
+      if (subcommand === 'before-shell') {
+        await handleCursorBeforeShell(requestId++);
+        break;
+      }
       if (subcommand !== 'permission-request') {
         process.stderr.write(`Unknown hook event: ${subcommand ?? '(none)'}\n`);
         process.stderr.write(COMMAND_HELP['hook']);
