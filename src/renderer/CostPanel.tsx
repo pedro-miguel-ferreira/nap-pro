@@ -75,7 +75,7 @@ export function CostPanel() {
         res = await window.electronAPI.getAgentCost(agentId, scope);
       }
       if (res && !res.error) {
-        setData({ perAgent: res.perAgent, total: res.total });
+        setData({ perAgent: res.perAgent, total: res.total, unavailable: res.unavailable });
       }
     } finally {
       setLoading(false);
@@ -101,7 +101,8 @@ export function CostPanel() {
 
   if (!open) return null;
 
-  const total = data?.total;
+  const unavailable = data?.unavailable;
+  const total = unavailable ? undefined : data?.total;
   const perAgent = data?.perAgent ?? [];
 
   return (
@@ -183,9 +184,13 @@ export function CostPanel() {
 
       {/* Per-agent table */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {perAgent.length === 0 ? (
+        {unavailable ? (
+          <div data-testid="cost-unavailable" style={{ padding: 24, color: '#6b7280', fontSize: 12 }}>
+            {unavailable}
+          </div>
+        ) : perAgent.length === 0 ? (
           <div style={{ padding: 24, color: '#6b7280', fontSize: 12 }}>
-            {loading ? 'Loading…' : 'No usage data found. Either the agent never ran, or claude logs are unavailable.'}
+            {loading ? 'Loading…' : 'No usage data found. Either the agent never ran, or its session logs are unavailable.'}
           </div>
         ) : (
           <table
