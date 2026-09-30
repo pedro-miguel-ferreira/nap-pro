@@ -21,7 +21,7 @@ import { Gutter } from './Gutter';
 import { useNapStore, loadPersistedUiState } from './store';
 import { createTerminalInstance, getTerminal, disposeTerminal } from './terminal-registry';
 import { registerAgentFileLinks } from './agent-file-open';
-import type { AppSnapshot, ChangedFile, ActivityEvent, WorkflowDef, CostQueryResult, BranchInfo, WorkflowRun, TimelineSnapshot, StageStats } from '../shared/bridge-types';
+import type { AppSnapshot, ChangedFile, ActivityEvent, WorkflowDef, CostQueryResult, BranchInfo, WorkflowRun, TimelineSnapshot, StageStats, BackendInfo } from '../shared/bridge-types';
 import '@xterm/xterm/css/xterm.css';
 
 // Expose store for Playwright tests
@@ -70,6 +70,7 @@ declare global {
       deleteWorkflow?: (name: string) => Promise<{ ok?: boolean; error?: boolean; message?: string }>;
       runWorkflow?: (workflowName: string, napkinSlug: string) => Promise<{ ok?: boolean; error?: boolean; message?: string }>;
       runWorkflowFromSpec?: (args: { workflowName: string; napkinSlug: string; workItemName: string; specDocs: string[] }) => Promise<{ ok?: boolean; error?: boolean; message?: string }>;
+      getBackendInfo?: () => Promise<BackendInfo>;
       // Cost (slice 7)
       getAgentCost?: (id: string, scope: 'agent' | 'subtree') => Promise<CostQueryResult & { error?: boolean; message?: string }>;
       getNapkinCost?: (slug: string) => Promise<CostQueryResult & { error?: boolean; message?: string }>;
@@ -145,10 +146,19 @@ function App() {
     loadPersistedUiState();
   }, [applySnapshot]);
 
-  // Auto-open cost panel when a workflow finishes
+  // Active agent backend (claude | cursor) — drives model pickers + cost UI
+  useEffect(() => {
+    window.electronAPI?.getBackendInfo?.().then((info) => {
+      if (info) useNapStore.getState().setBackendInfo(info);
+    }).catch(() => {});
+  }, []);
+
+  // Auto-open cost panel when a workflow finishes — skipped on backends with
+  // no cost data (the panel would only say so).
   useEffect(() => {
     if (!window.electronAPI?.onWorkflowComplete) return;
     return window.electronAPI.onWorkflowComplete(({ napkinSlug }) => {
+      if (useNapStore.getState().backendInfo?.costAvailable === false) return;
       useNapStore.getState().openCostPanelForNapkin(napkinSlug);
     });
   }, []);

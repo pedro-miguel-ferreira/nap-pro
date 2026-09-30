@@ -1,6 +1,7 @@
 import * as pty from 'node-pty';
 import type { PtySpawner, SpawnRequest, TimelineChunk } from './pty-spawner';
 import { getServerSocketPath } from '../shared/constants';
+import { AGENT_BINARIES } from './agent-backend';
 
 /**
  * Real PtySpawner wrapping node-pty.
@@ -10,8 +11,8 @@ import { getServerSocketPath } from '../shared/constants';
  * brittle quote escaping. Now we pass `file` + `args[]` and let execve handle
  * arg boundaries — no shell interpretation possible.
  *
- * In test mode (NAP_TEST=1), replaces `claude` with `cat` so tests don't need
- * a real Claude Code install.
+ * In test mode (NAP_TEST=1), replaces the agent binary (`claude` or Cursor's
+ * `agent`) with `cat` so tests don't need a real agent CLI install.
  */
 export class NodePtySpawner implements PtySpawner {
   private processes = new Map<string, pty.IPty>();
@@ -42,10 +43,12 @@ export class NodePtySpawner implements PtySpawner {
 
   spawn(opts: SpawnRequest): void {
     const finalCwd = opts.cwd || process.env['NAP_CWD'] || process.cwd();
-    // In test mode, swap `claude` for `cat` so tests don't need claude on PATH.
-    // `cat` ignores args, so we drop them too — just echoes whatever's typed.
-    const file = this.testMode && opts.file === 'claude' ? 'cat' : opts.file;
-    const args = this.testMode && opts.file === 'claude' ? [] : opts.args;
+    // In test mode, swap the agent binary for `cat` so tests don't need an
+    // agent CLI on PATH. `cat` ignores args, so we drop them too — just echoes
+    // whatever's typed.
+    const swap = this.testMode && AGENT_BINARIES.has(opts.file);
+    const file = swap ? 'cat' : opts.file;
+    const args = swap ? [] : opts.args;
 
     const proc = pty.spawn(file, args, {
       name: 'xterm-256color',
@@ -208,7 +211,7 @@ export class NodePtySpawner implements PtySpawner {
   /**
    * SIGSTOP the entire process group of the PTY.
    * Negative pid signals the pgid; node-pty puts each child in its own session,
-   * so this freezes the shell + claude + any subprocesses atomically.
+   * so this freezes the shell + agent + any subprocesses atomically.
    */
   pause(id: string): boolean {
     const proc = this.processes.get(id);

@@ -1,13 +1,13 @@
 import * as fsPromises from 'fs/promises';
 import * as path from 'path';
 import type { ActivityEvent } from '../shared/bridge-types';
-import { getAgentCost } from './cost-helpers';
+import { getBackend } from './agent-backend';
 import type { NapModel } from './model';
 
 /**
  * Aggregate past outcomes for a "stage" — agents matching a given name + role
  * across all napkins. Reads each agent's activity.ndjson to derive lifecycle
- * outcomes; reads CC session logs (via cost-helpers) for token spend.
+ * outcomes; reads session logs (via the backend's readUsage) for token spend.
  *
  * Why name+role for matching: the workflow editor identifies stages by both,
  * so re-running a workflow produces multiple agents at the same name+role
@@ -78,10 +78,11 @@ export async function computeStageStats(
       continue;
     }
 
-    // Cost from CC session log (best-effort — zero if no log).
+    // Cost from the backend's session log (best-effort — zero if no log;
+    // null if the backend has no usage data at all).
     // Use the agent's effective cwd (worktree if napkin had one; else project root).
     const cwd = model.getAgentCwd(agent.id) || projectCwd;
-    const costSummary = await getAgentCost(agent.id, agent.name, cwd);
+    const costSummary = await getBackend().readUsage(agent.id, agent.name, cwd);
 
     samples.push({
       napkinSlug: agent.napkinId,
@@ -89,7 +90,7 @@ export async function computeStageStats(
       model: agent.model,
       status,
       durationMs,
-      costUsd: costSummary.costUsd,
+      costUsd: costSummary?.costUsd ?? 0,
       ts: startedAt!,
     });
   }
@@ -113,7 +114,8 @@ export async function computeStageStats(
     inProgressCount,
     passRate: terminalSamples.length === 0 ? null : completedCount / terminalSamples.length,
     medianDurationMs: median(durations),
-    medianCostUsd: median(costs),
+    // No usage data on this backend → unknown, not $0.
+    medianCostUsd: getBackend().usageAvailable ? median(costs) : null,
     recent: samples.slice(0, RECENT_LIMIT),
   };
 }

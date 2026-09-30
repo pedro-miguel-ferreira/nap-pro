@@ -240,6 +240,8 @@ export interface AgentCostSummary {
 
 export interface CostQueryResult {
   perAgent: AgentCostSummary[];
+  /** Set when the backend has no usage data (Cursor) — show this instead of zeros. */
+  unavailable?: string;
   total: {
     tokens: { input: number; output: number; cacheWrite: number; cacheRead: number };
     totalTokens: number;
@@ -358,6 +360,14 @@ export interface NapkinState {
 }
 
 // ── Bridge protocol ──
+
+/** Which agent CLI the project runs on — from the `backend:info` IPC. */
+export interface BackendInfo {
+  name: 'claude' | 'cursor';
+  models: Array<{ id: string; label: string }>;
+  /** false → no token/cost data (cost panel shows a notice instead). */
+  costAvailable: boolean;
+}
 
 export interface AppSnapshot {
   napkins: NapkinState[];

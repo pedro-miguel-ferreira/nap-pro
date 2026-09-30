@@ -117,6 +117,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     specDocs: string[];
   }) => ipcRenderer.invoke('workflows:run-from-spec', args),
 
+  getBackendInfo: () => ipcRenderer.invoke('backend:info'),
+
   // ── Cost / metrics (slice 7) ──
   getAgentCost: (id: string, scope: 'agent' | 'subtree') =>
     ipcRenderer.invoke('agent:get-cost', id, scope),

@@ -121,12 +121,20 @@ import { replayAgent } from './replay';
 import { WorkflowRegistry } from './workflow-registry';
 import { WorkflowWatcher } from './workflow-watcher';
 import { computeStageStats } from './stage-stats';
-import { getAgentCost, totalCost } from './cost-helpers';
+import { totalCost, type AgentCostSummary } from './cost-helpers';
 import { validateIdentifier } from '../shared/identifiers';
 import { validateWorkflow } from '../shared/workflow-validation';
-import { buildClaudeArgs, setPermissionsSettingsPath } from './claude-args';
+import { setPermissionsSettingsPath } from './claude-args';
 import { ensurePermissionsSettingsFile } from './permissions-config';
-import { isResumeMissingSession } from './resume-detection';
+import {
+  buildAgentSpawn,
+  getBackend,
+  getBackendByName,
+  resolveBackendName,
+  resolveRunDir,
+  setActiveBackend,
+  COST_UNAVAILABLE_MESSAGE,
+} from './agent-backend';
 
 let ptySpawner: NodePtySpawner | null = null;
 // Module-level model ref — set inside app.whenReady once the project is
@@ -439,9 +447,15 @@ app.whenReady().then(async () => {
   const model = createModel(fs);
   projectModel = model;  // expose to module-level handlers (file:read, etc.)
 
+  // Pick the agent backend (claude | cursor) for this project — NAP_BACKEND
+  // env, else .nap/config.json, else claude.
+  setActiveBackend(getBackendByName(resolveBackendName(projectCwd)));
+
   // Materialize permissions settings + register the path so every spawned
-  // claude inherits bypassPermissions + the deny list (rm -rf, gh pr merge,
-  // gh pr close, …). One file, one setter call, no plumbing through callers.
+  // agent inherits bypassPermissions + the deny list (rm -rf, gh pr merge,
+  // gh pr close, …). Claude reads the file via --settings; the Cursor backend
+  // translates it into .cursor/cli.json at spawn. One file, one setter call,
+  // no plumbing through callers.
   try {
     const permsPath = await ensurePermissionsSettingsFile(projectCwd);
     setPermissionsSettingsPath(permsPath);
@@ -592,25 +606,30 @@ app.whenReady().then(async () => {
     // Archived agents don't resume — they need the successor flow
     if (agent.archived) return;
 
+    const backend = getBackend();
+    const cwd = model.getAgentCwd(agent.id);
+
+    // Session known to be gone (Cursor pre-spawn check) → same path as a
+    // failed resume, without spawning an empty session.
+    if (backend.sessionExists(resolveRunDir(cwd), agent.id) === false) {
+      void model.setAgentArchived(agent.id);
+      return;
+    }
+
     const spawnTime = Date.now();
 
-    const args = buildClaudeArgs({
-      sessionId: agent.id,
-      model: agent.model,
-      resume: true,
-    });
-    ptySpawner.spawn({
+    ptySpawner.spawn(buildAgentSpawn({
       id: agent.id,
-      file: 'claude',
-      args,
-      cwd: model.getAgentCwd(agent.id),
-    });
+      mode: 'resume',
+      model: agent.model,
+      cwd,
+    }));
 
     ptySpawner.onExit(agent.id, async () => {
       // Resume failure detection: fast exit + known "session gone" wording.
       if ((Date.now() - spawnTime) < RESUME_FAIL_THRESHOLD_MS) {
         const output = (ptySpawner as any).getOutputBuffer?.(agent.id) ?? '';
-        if (isResumeMissingSession(output)) {
+        if (backend.resumeFailedOutput(output)) {
           await model.setAgentArchived(agent.id);
           return;
         }
@@ -873,6 +892,27 @@ app.whenReady().then(async () => {
   });
 
   // ── Cost / metrics (slice 7) ──
+  // Backends without usage data (Cursor) return an explicit `unavailable`
+  // message instead of a table of zeros.
+  async function costQuery(agents: Array<{ id: string; name: string }>) {
+    const backend = getBackend();
+    const results = await Promise.all(
+      agents.map((a) => backend.readUsage(a.id, a.name, gitCwdForAgent(a.id))),
+    );
+    if (results.some((r) => r === null)) {
+      return { perAgent: [], total: totalCost([]), unavailable: COST_UNAVAILABLE_MESSAGE };
+    }
+    const perAgent = results as AgentCostSummary[];
+    return { perAgent, total: totalCost(perAgent) };
+  }
+
+  // Which backend this project runs on — the renderer uses it for model
+  // pickers and to skip cost UI the backend can't fill.
+  ipcMain.handle('backend:info', () => {
+    const b = getBackend();
+    return { name: b.name, models: b.models, costAvailable: b.usageAvailable };
+  });
+
   ipcMain.handle('agent:get-cost', async (_event, id: string, scope: 'agent' | 'subtree') => {
     const allAgents = model.getAllAgents();
     const root = allAgents.find((a) => a.id === id);
@@ -894,10 +934,7 @@ app.whenReady().then(async () => {
       }
     }
 
-    const perAgent = await Promise.all(
-      scoped.map((a) => getAgentCost(a.id, a.name, gitCwdForAgent(a.id))),
-    );
-    return { perAgent, total: totalCost(perAgent) };
+    return costQuery(scoped);
   });
 
   // ── Timeline replay (slice 12) ──
@@ -934,10 +971,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('napkin:get-cost', async (_event, slug: string) => {
     const napkin = model.getNapkins().find((n) => n.slug === slug);
     if (!napkin) return { error: true, message: `napkin '${slug}' not found` };
-    const perAgent = await Promise.all(
-      napkin.agents.map((a) => getAgentCost(a.id, a.name, gitCwdForAgent(a.id))),
-    );
-    return { perAgent, total: totalCost(perAgent) };
+    return costQuery(napkin.agents);
   });
 
   // Capture git HEAD as the agent's baseline at spawn time. Synchronous —

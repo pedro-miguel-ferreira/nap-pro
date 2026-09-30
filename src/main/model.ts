@@ -3,8 +3,7 @@ import type { NapkinState, AgentState, NapkinStatus, NepicInfo, Entry, FileEntry
 import type { PtySpawner } from './pty-spawner';
 import { resolveByName } from './name-resolver';
 import { assertValidIdentifier } from '../shared/identifiers';
-import { buildClaudeArgs } from './claude-args';
-import * as crypto from 'crypto';
+import { buildAgentSpawn, getBackend } from './agent-backend';
 import * as path from 'path';
 
 // ── Return types for new model methods ──
@@ -756,7 +755,7 @@ export function createModel(fs: FileSystem): NapModel {
     if (!agent) throw new Error(`agent ${agentId} not found`);
 
     const oldId = agent.id;
-    const newId = crypto.randomUUID();
+    const newId = getBackend().newSessionId();
 
     // Reset ephemeral lifecycle state
     runningAgents.delete(oldId);
@@ -874,16 +873,17 @@ export function createModel(fs: FileSystem): NapModel {
     const agent = findAgentById(agentId);
     if (!agent) return null;
 
-    const newId = crypto.randomUUID();
+    const newId = getBackend().newSessionId();
     const prompt = generateSuccessorPrompt(agent);
 
-    // Spawn fresh Claude with generated prompt as first message — args, no shell
-    const args = buildClaudeArgs({
-      sessionId: newId,
+    // Spawn a fresh session with generated prompt as first message — args, no shell
+    ptySpawner.spawn(buildAgentSpawn({
+      id: newId,
+      mode: 'fresh',
       model: agent.model,
       prompt,
-    });
-    ptySpawner.spawn({ id: newId, file: 'claude', args, cwd: getAgentCwd(agentId) });
+      cwd: getAgentCwd(agentId),
+    }));
 
     ptySpawner.onExit(newId, () => {
       return setAgentExitedById(newId);
@@ -1035,7 +1035,7 @@ export function createModel(fs: FileSystem): NapModel {
 
     const agentHomePath = nepicDir + '/30-napkins/' + napkinSlug + '/agents/' + name;
     const markerPath = agentHomePath + '/.agent.nap.json';
-    const id = crypto.randomUUID();
+    const id = getBackend().newSessionId();
     const now = Date.now();
 
     const parent = parentId ? findAgentById(parentId) : null;
@@ -1099,7 +1099,7 @@ export function createModel(fs: FileSystem): NapModel {
     const currentNepicId = _nepicId ?? getNepicSlug();
     const archPath = nepicDir + '/20-architects/' + name;
     const markerPath = archPath + '/.agent.nap.json';
-    const id = crypto.randomUUID();
+    const id = getBackend().newSessionId();
     const now = Date.now();
 
     const parent = parentId ? findAgentById(parentId) : null;
@@ -1168,7 +1168,7 @@ export function createModel(fs: FileSystem): NapModel {
     // Create architect stub
     const archName = '001-architect';
     const archPath = newNepicDir + '/20-architects/' + archName;
-    const archId = crypto.randomUUID();
+    const archId = getBackend().newSessionId();
     const now = Date.now();
 
     const archMarker = {
@@ -1223,18 +1223,13 @@ export function createModel(fs: FileSystem): NapModel {
       }
     }
 
-    const args = buildClaudeArgs({
-      sessionId: agent.id,
-      model: agent.model,
-      prompt: prompt ?? undefined,
-    });
-
-    ptySpawner.spawn({
+    ptySpawner.spawn(buildAgentSpawn({
       id: agent.id,
-      file: 'claude',
-      args,
+      mode: 'fresh',
+      model: agent.model,
+      prompt,
       cwd: getAgentCwd(agent.id),
-    });
+    }));
 
     ptySpawner.onExit(agent.id, () => {
       return setAgentExitedById(agent.id);

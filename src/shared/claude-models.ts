@@ -1,7 +1,8 @@
 /**
  * The Claude models selectable for stage agents, replays, and scope stages —
  * single source of truth for every model dropdown. Ordered most → least
- * capable. Consumers prepend their own "default (CC chooses)" empty-id entry.
+ * capable. Consumers prepend their own "default" empty-id entry. The Cursor
+ * backend has its own list (cursor-models.ts).
  *
  * Cost rates for these ids live in src/main/cost-helpers.ts; chart colors in
  * src/renderer/CostPanel.tsx — keep all three in sync when models change.

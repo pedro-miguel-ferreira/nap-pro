@@ -1,12 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNapStore } from './store';
-import { CLAUDE_MODELS } from '../shared/claude-models';
+import { useModelOptions, withSavedModel } from './model-options';
 import type { AgentState, NapkinState } from '../shared/bridge-types';
-
-const MODELS: Array<{ id: string; label: string }> = [
-  { id: '', label: 'default (CC chooses)' },
-  ...CLAUDE_MODELS,
-];
 
 function findAgent(
   id: string,
@@ -33,6 +28,7 @@ export function AgentReplayModal() {
   const [prompt, setPrompt] = useState<string>('');
   const [editPrompt, setEditPrompt] = useState(false);
   const [busy, setBusy] = useState(false);
+  const modelOptions = useModelOptions();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -130,7 +126,7 @@ export function AgentReplayModal() {
           onChange={(e) => setModel(e.target.value)}
           style={{ ...inputStyle, marginBottom: 12 }}
         >
-          {MODELS.map((m) => (
+          {[{ id: '', label: 'default' }, ...withSavedModel(modelOptions, model)].map((m) => (
             <option key={m.id || 'default'} value={m.id}>
               {m.label}
               {original.model === m.id ? ' (original)' : ''}

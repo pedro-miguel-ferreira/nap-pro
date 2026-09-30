@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AppSnapshot, NapkinState, AgentState, NepicInfo, WatcherEvent, WorkflowRun } from '../shared/bridge-types';
+import type { AppSnapshot, NapkinState, AgentState, NepicInfo, WatcherEvent, WorkflowRun, BackendInfo } from '../shared/bridge-types';
 
 export type CardViewMode = 'collapsed' | 'focused' | 'extended';
 
@@ -47,6 +47,8 @@ export interface NapStore {
   costPanelScope: 'agent' | 'subtree';
   /** When set, panel queries by napkin slug instead of agent id. */
   costPanelNapkinSlug: string | null;
+  /** Active agent backend; null until `backend:info` answers. */
+  backendInfo: BackendInfo | null;
   timelinePanelAgentId: string | null;
   roleEditorOpen: boolean;
   workflowSetupOpen: boolean;
@@ -105,6 +107,7 @@ export interface NapStore {
   closeActivityPanel: () => void;
   openCostPanel: (agentId: string, scope: 'agent' | 'subtree') => void;
   openCostPanelForNapkin: (slug: string) => void;
+  setBackendInfo: (info: BackendInfo) => void;
   closeCostPanel: () => void;
   openTimelinePanel: (agentId: string) => void;
   closeTimelinePanel: () => void;
@@ -166,6 +169,7 @@ export const useNapStore = create<NapStore>((set, get) => ({
   costPanelAgentId: null,
   costPanelScope: 'agent' as const,
   costPanelNapkinSlug: null,
+  backendInfo: null,
   timelinePanelAgentId: null,
   roleEditorOpen: false,
   workflowSetupOpen: false,
@@ -384,6 +388,9 @@ export const useNapStore = create<NapStore>((set, get) => ({
 
   openCostPanel: (agentId: string, scope: 'agent' | 'subtree') => {
     set({ costPanelAgentId: agentId, costPanelScope: scope, costPanelNapkinSlug: null });
+  },
+  setBackendInfo: (info: BackendInfo) => {
+    set({ backendInfo: info });
   },
   openCostPanelForNapkin: (slug: string) => {
     set({ costPanelAgentId: null, costPanelNapkinSlug: slug });

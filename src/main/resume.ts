@@ -1,10 +1,10 @@
 import type { AgentState } from '../shared/bridge-types';
-import { buildClaudeArgs } from './claude-args';
+import { getBackend } from './agent-backend';
 
 export interface ResumeAction {
   agentId: string;
   action: 'resume' | 'fresh' | 'skip';
-  /** Executable to spawn — 'claude' for resume/fresh, undefined for skip. */
+  /** Executable to spawn — the backend binary for resume/fresh, undefined for skip. */
   file?: string;
   /** Argv for the spawn — no shell interpretation. */
   args?: string[];
@@ -35,11 +35,11 @@ export function computeResumeActions(agents: AgentState[]): ResumeAction[] {
       return {
         agentId: agent.id,
         action: 'resume' as const,
-        file: 'claude',
-        args: buildClaudeArgs({
+        file: getBackend().binary,
+        args: getBackend().buildArgs({
+          mode: 'resume',
           sessionId: agent.id,
           model: agent.model,
-          resume: true,
         }),
       };
     }

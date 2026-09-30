@@ -1,15 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNapStore } from './store';
-import { CLAUDE_MODELS } from '../shared/claude-models';
+import { useModelOptions, withSavedModel } from './model-options';
 import { PathListInput } from './PathListInput';
 import type { AgentStage, OpenPrStage, WorkflowDef, WorkflowStage, PromptSource, BranchInfo, StageStats } from '../shared/bridge-types';
 
 const NAME_RE = /^[a-z0-9_-]+$/i;
-
-const MODELS: Array<{ id: string; label: string }> = [
-  { id: '', label: 'default (CC chooses)' },
-  ...CLAUDE_MODELS,
-];
 
 const PROMPT_SOURCES: Array<{ id: PromptSource; label: string; help: string }> = [
   { id: 'template', label: 'role template', help: 'use the role file as the prompt' },
@@ -63,6 +58,7 @@ export function WorkflowSetup() {
   const open = useNapStore((s) => s.workflowSetupOpen);
   const target = useNapStore((s) => s.workflowSetupTarget);
   const close = useNapStore((s) => s.closeWorkflowSetup);
+  const modelOptions = useModelOptions();
 
   const [workflows, setWorkflows] = useState<string[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
@@ -648,7 +644,7 @@ export function WorkflowSetup() {
                       style={{ ...selectStyle, width: 200 }}
                     >
                       <option value="">default</option>
-                      {CLAUDE_MODELS.map((m) => (
+                      {withSavedModel(modelOptions, draft.scope.model).map((m) => (
                         <option key={m.id} value={m.id}>
                           {m.label}
                         </option>
@@ -825,6 +821,7 @@ function AgentStageRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
+  const modelOptions = useModelOptions();
   const onChange = (patch: Partial<AgentStage>): void =>
     update((s) => (s.kind === 'open-pr' ? s : { ...s, ...patch }));
   return (
@@ -880,7 +877,7 @@ function AgentStageRow({
             onChange={(e) => onChange({ model: e.target.value || null })}
             style={selectStyle}
           >
-            {MODELS.map((m) => (
+            {[{ id: '', label: 'default' }, ...withSavedModel(modelOptions, stage.model)].map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
               </option>
