@@ -49,15 +49,18 @@ Main process                          Renderer process
 
 **CLI** is a separate process. Talks to the app through the socket. Every command goes: CLI → socket → model → marker files + bridge snapshot → renderer updates.
 
-**Agents** are Claude Code sessions in ptys managed by the main process. They communicate through files (prompt.md in, response.md out) and `nap-pro done` (through CLI → socket → model).
+**Agents** are agent-CLI sessions (Claude Code by default, or Cursor's `agent` — see `backend` in `.nap/config.json`) in ptys managed by the main process. They communicate through files (prompt.md in, response.md out) and `nap-pro done` (through CLI → socket → model).
 
 ## Complete filesystem layout
 
 ```
 project-root/
   .claude/
-    settings.json                    ← CC settings, includes PermissionRequest hook if guardian enabled
-    skills/                          ← napkin + napkin-format skills (if installed)
+    settings.json                    ← CC settings, includes PermissionRequest hook if guardian enabled (claude backend)
+    skills/                          ← napkin + napkin-format skills (if installed; Cursor reads these too)
+  .cursor/                           ← cursor backend only; generated, git-excluded
+    cli.json                         ← deny list translated from .nap/permissions.json at each spawn
+    hooks.json                       ← beforeShellExecution guardian hook (if guardian enabled)
 
   .nap/
     .gitignore                       ← MUST contain: sock\nui-state.json
@@ -213,6 +216,23 @@ At project root (not inside .nap/). CC reads this automatically for all sessions
 
 If guardian dir exists but this config is missing: guardian was scaffolded but hook not wired. Permissions won't flow to guardian.
 
+### .cursor/hooks.json (guardian hook, cursor backend)
+
+Cursor has no PermissionRequest event, so the guardian hooks every shell command instead:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      { "command": "nap-pro hook before-shell", "timeout": 600, "failClosed": true }
+    ]
+  }
+}
+```
+
+`nap-pro hook before-shell` allows commands that don't match the `ask` rules in `.nap/permissions.json`, and routes matching ones to the guardian. Without a guardian, `ask` rules become hard denies in `.cursor/cli.json` (agents run with `--force`, which has no ask tier).
+
 ## What happens on app startup (step by step)
 
 1. Read `ui-state.json` → determine active nepic (or default to last)
@@ -225,8 +245,8 @@ If guardian dir exists but this config is missing: guardian was scaffolded but h
 8. Start file watcher on `30-napkins/` and `20-architects/` (debounced 200ms)
 9. Start socket server at `.nap/sock`
 10. For each agent where `started: true AND exited: false AND NOT archived`:
-    - Spawn `claude --verbose --resume <cc_session_uuid>`
-    - If resume fails fast (pty exits within ~5s with "No conversation found"): mark `archived: true`, show successor prompt
+    - claude: spawn `claude --verbose --resume <cc_session_uuid>`. If resume fails fast (pty exits within ~5s with "No conversation found"): mark `archived: true`, show successor prompt
+    - cursor: if `~/.cursor/chats/<md5(cwd)>/<cc_session_uuid>/meta.json` is missing, mark `archived: true` without spawning (Cursor silently starts an empty chat for an unknown id); otherwise spawn `agent --resume <cc_session_uuid> --trust --approve-mcps --force`
 11. Create Electron window, push model snapshot to renderer via bridge
 
 **If something is missing at any step:** The app doesn't crash. Missing markers → defaults. Missing dirs → skipped. The app shows what it can find.
@@ -247,21 +267,22 @@ Every `nap-pro` command that modifies state goes through the socket to the runni
 | Command | Files created/modified |
 |---|---|
 | `nap-pro init` | Creates entire `.nap/` tree from templates. Writes `.agent.nap.json` for architect. No socket needed. |
-| `nap-pro init --guardian` | Also creates `002-guardian/` dir + marker, writes `.claude/settings.json` |
+| `nap-pro init --guardian` | Also creates `002-guardian/` dir + marker, writes `.claude/settings.json` (cursor backend: `.cursor/hooks.json`) |
+| `nap-pro init --backend cursor` | Also writes `"backend": "cursor"` to `.nap/config.json` (`setup --backend` does the same on an existing project) |
 | `nap-pro init --template <name>` | Also copies seed.nap.md to `10-docs/01-inputs.nap.md` |
 | `nap-pro setup --guardian` | Creates guardian + hook config. Idempotent. No socket needed. |
 | `nap-pro setup --skills` | Copies skill files to `.claude/skills/`. No socket needed. |
 | `nap-pro setup --import` | Scans for unmarked agents/napkins, creates markers. No socket needed. |
 | `nap-pro create napkin <slug>` | Creates dir + `.napkin.nap.json` + `agents/` dir. Via socket. |
 | `nap-pro create agent <napkin> <name> <role>` | Creates agent dir + `.agent.nap.json` (started: false). Via socket. |
-| `nap-pro start <name> [prompt]` | Sets `started: true` in marker. Spawns pty with `--session-id <uuid>`. Via socket. |
+| `nap-pro start <name> [prompt]` | Sets `started: true` in marker. Spawns pty with `--session-id <uuid>` (cursor: `--resume <uuid>`, which creates the chat). Via socket. |
 | `nap-pro done` | Sets `done: true` in model (persisted to marker). Via socket. Agent calls this from inside its pty. |
 | `nap-pro set-status <slug> <status>` | Writes `.napkin.nap.json`. Via socket. |
 | `nap-pro stop <name>` | Kills pty. Sets `exited: true` in marker. Via socket. |
 | `nap-pro poke <name> <msg>` | Writes to pty stdin (three-step: text → Esc → CR). Via socket. |
 | `nap-pro key <name> <key>` | Writes raw bytes to pty stdin. Via socket. |
 | `nap-pro ps` | Reads from model. No file changes. Via socket. |
-| `nap-pro doctor` | Spawns claude with baked-in diagnostic prompt. No socket, no app needed. |
+| `nap-pro doctor` | Spawns the backend's CLI (claude / agent) with baked-in diagnostic prompt. No socket, no app needed. |
 
 ## The socket protocol
 
@@ -316,8 +337,8 @@ Agent was somehow created without a UUID. Can't resume. Fix: generate a new UUID
 **Agent has `response.md` but `done: false`:**
 Agent wrote its output but didn't call `nap-pro done`. The architect is still blocked on `nap-pro nap`. Fix: manually set `done: true` in marker, or poke the agent to run `nap-pro done`.
 
-**Guardian dir exists but no hook in `.claude/settings.json`:**
-Guardian was scaffolded but permissions don't flow to it. CC shows its own permission dialog instead. Fix: `nap-pro setup --guardian` writes the hook config.
+**Guardian dir exists but no hook in `.claude/settings.json` (or `.cursor/hooks.json` on the cursor backend):**
+Guardian was scaffolded but permissions don't flow to it. Claude Code shows its own permission dialog instead; on Cursor, `ask` rules are hard denies. Fix: `nap-pro setup --guardian` writes the hook config.
 
 **`ui-state.json` references a nepic that doesn't exist:**
 App falls back to last nepic alphabetically. Not a crash, but confusing. Fix: update activeNepicId or delete ui-state.json (app recreates on shutdown).

@@ -1,6 +1,7 @@
 # nap-pro
 
-Multi-agent orchestrator for Claude Code. A richer app on top of NAP:
+Multi-agent orchestrator for Claude Code (or Cursor's `agent` CLI — see
+[Cursor backend](#cursor-backend)). A richer app on top of NAP:
 hierarchical agent tree, pause/resume, live diffs, activity stream, per-napkin
 git worktrees, role + workflow editors, per-agent model selection, a command
 palette, agent-to-agent Q&A, an optional permission guardian, and end-of-flow
@@ -183,6 +184,47 @@ At the end of every workflow, a panel auto-opens with per-stage tokens (input
 / output / cache write / cache read), per-model attribution, USD cost, message
 count, and duration. Or right-click any agent → **Cost** for ad-hoc inspection.
 Reads CC's session log at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
+On the Cursor backend the panel says cost data isn't available (Cursor's
+transcripts carry no token usage) and doesn't auto-open.
+
+## Cursor backend
+
+nap-pro drives Claude Code by default. To drive Cursor's `agent` CLI instead
+(`~/.local/bin/agent`, logged in):
+
+```
+nap-pro init --backend cursor          # new project
+nap-pro setup --backend cursor         # existing project
+NAP_BACKEND=cursor nap-pro open        # one-off override (claude|cursor)
+```
+
+The choice lives in `.nap/config.json` (`"backend": "cursor"`); `NAP_BACKEND`
+overrides it; nothing set → `claude`. What changes:
+
+- **Spawn.** Agents run `agent --resume <id> --trust --approve-mcps --force
+  [--model <id>] [prompt]` for both fresh and resumed sessions — `--resume` with
+  an unseen id creates the chat under that id, so agent id == Cursor chat id.
+- **Resume.** Cursor silently starts an empty chat when the id is unknown, so
+  nap-pro checks `~/.cursor/chats/<md5(cwd)>/<id>/meta.json` before resuming and
+  archives the agent (successor flow) if it's missing.
+- **Permissions.** `.nap/permissions.json` stays the source of truth. At each
+  spawn it's translated into `.cursor/cli.json` in the agent's run dir (worktree
+  or project root). Under `--force` there's no "ask" tier, so `ask` rules become
+  hard denies — unless the guardian is set up. Generated `.cursor/cli.json` and
+  `.cursor/hooks.json` are added to the repo's `.git/info/exclude`.
+- **Guardian.** `setup --guardian` writes a `beforeShellExecution` hook
+  (`nap-pro hook before-shell`) into `.cursor/hooks.json`. It allows commands
+  that don't match an `ask` rule and routes matching ones to the guardian;
+  `--interrupt` has no Cursor equivalent (the deny message still reaches the
+  agent). An unanswered request is denied.
+- **Models.** Pickers list Cursor model ids. Saved Claude-style ids still work:
+  `claude-opus-5-5` → `claude-opus-5-5-high`, etc.; retired ids map to the
+  nearest Cursor model.
+- **Cost.** Not available (see Cost panel).
+- **Keystrokes.** `poke`/`ask` delivery (text, then Enter) works as with Claude.
+  Escape while the agent is working cancels the turn and puts the prompt back
+  in the input box — a following message is appended to it.
+- Skills in `.claude/skills/` and `CLAUDE.md`/`AGENTS.md` are read natively.
 
 ## How agents talk to each other (and to you)
 
@@ -229,7 +271,8 @@ nap-pro done                        # the current agent marks itself done
 
 ### Permission guardian (optional)
 Initialize with `nap-pro init --guardian` (or `nap-pro setup --guardian`) to
-register a Claude Code `PermissionRequest` hook plus a guardian agent. When a
+register a Claude Code `PermissionRequest` hook (Cursor backend: a
+`beforeShellExecution` hook) plus a guardian agent. When a
 gated tool call fires, the hook routes it through:
 ```
 nap-pro hook permission-request         # CC hook handler (wired automatically)
@@ -245,8 +288,8 @@ Requests and their outcomes show up in the activity stream as
 ## CLI reference
 
 ```
-nap-pro init [--template <name>] [--list-templates] [--guardian] [--add-skills]
-nap-pro setup --guardian | --skills | --import   Add capabilities to a project
+nap-pro init [--template <name>] [--list-templates] [--backend claude|cursor] [--guardian] [--add-skills]
+nap-pro setup --backend <b> | --guardian | --skills | --import   Add capabilities to a project
 nap-pro open                                     Launch the app
 nap-pro dev                                      Launch with hot-reload
 nap-pro doctor                                   Diagnose project health
@@ -277,6 +320,7 @@ nap-pro worktree path <slug>
 
 nap-pro import-agents <nepic-dir>                Import existing agent dirs as archived
 nap-pro hook permission-request                  CC PermissionRequest hook handler
+nap-pro hook before-shell                        Cursor beforeShellExecution hook handler
 nap-pro permission-response [--list] --agent <id> --decision allow|deny [--message <m>] [--interrupt]
 ```
 

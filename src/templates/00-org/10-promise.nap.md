@@ -10,9 +10,9 @@ You and an architect brainstorm for fifteen minutes. What survives fits on a nap
 
 **Thinking.** Designing where things break is a different act than building them. Test strategy is design work — it deserves its own context window.
 
-## Why full Claude Code sessions
+## Why full agent sessions
 
-Every agent is a full CC session in its own terminal. Full history, full tools, full skills. You can click on any agent, watch it think, ask questions, steer mid-task. Agents are teammates you can talk to, not functions returning strings.
+Every agent is a full agent-CLI session (Claude Code or Cursor) in its own terminal. Full history, full tools, full skills. You can click on any agent, watch it think, ask questions, steer mid-task. Agents are teammates you can talk to, not functions returning strings.
 
 ## The cycle
 

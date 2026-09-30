@@ -10,14 +10,14 @@
 
 ## Two ways to use agents
 
-**Research (Claude Code internal Explore agent):**
+**Research (your agent CLI's built-in subagent / explore tool):**
 - Quick codebase questions, finding code, understanding patterns
 - The report comes back into YOUR context — fast, lightweight
 - Use freely — this is like looking something up
 
 **Work (NAP agents via `nap-pro start`):**
 - EVERYTHING that produces artifacts — implementation, test writing, design exploration
-- Creates a full Claude Code session in its own terminal
+- Creates a full agent session (Claude Code or Cursor) in its own terminal
 - The person can watch, talk to, steer — full visibility
 - **ALWAYS use this for anything beyond research**
 

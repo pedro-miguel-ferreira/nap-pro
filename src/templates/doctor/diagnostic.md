@@ -81,7 +81,7 @@ Read the project's org docs and agent prompts. Check for key concepts — not ex
 ### Phase 7: Guardian and permissions
 
 - Does `002-guardian/` exist in `20-architects/`?
-- If yes: does `.claude/settings.json` exist with the PermissionRequest hook?
+- If yes: does `.claude/settings.json` exist with the PermissionRequest hook? (If `.nap/config.json` has `"backend": "cursor"`, check `.cursor/hooks.json` for a `beforeShellExecution` hook running `nap-pro hook before-shell` instead.)
 - If guardian dir but no hook config → guardian is scaffolded but not wired
 - If hook config but no guardian dir → hook will fail
 - Does `learned-policies.md` exist? (absence after many napkins suggests guardian isn't learning)
