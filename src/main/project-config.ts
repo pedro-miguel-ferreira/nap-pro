@@ -17,6 +17,11 @@ export interface ProjectConfig {
   worktreeBaseDir?: string;
   /** Name of the workflow to preselect in the from-spec modal. */
   defaultWorkflow?: string;
+  /**
+   * Agent CLI to drive: 'claude' (default) or 'cursor'. Read synchronously at
+   * startup by agent-backend.ts resolveBackendName; NAP_BACKEND overrides it.
+   */
+  backend?: 'claude' | 'cursor';
 }
 
 /** Resolve the path where this project's config lives. */
@@ -58,5 +63,6 @@ function sanitize(input: unknown): ProjectConfig {
   if (typeof o.prTitlePrefix === 'string') out.prTitlePrefix = o.prTitlePrefix;
   if (typeof o.worktreeBaseDir === 'string') out.worktreeBaseDir = o.worktreeBaseDir;
   if (typeof o.defaultWorkflow === 'string') out.defaultWorkflow = o.defaultWorkflow;
+  if (o.backend === 'claude' || o.backend === 'cursor') out.backend = o.backend;
   return out;
 }

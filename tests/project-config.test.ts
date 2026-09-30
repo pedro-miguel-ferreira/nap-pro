@@ -53,6 +53,17 @@ describe('readProjectConfig', () => {
   });
 });
 
+describe('readProjectConfig — backend', () => {
+  it('keeps a known backend and drops unknown ones', async () => {
+    await fsPromises.mkdir(path.join(tmpDir, '.nap'), { recursive: true });
+    const p = path.join(tmpDir, '.nap', 'config.json');
+    await fsPromises.writeFile(p, JSON.stringify({ backend: 'cursor' }));
+    expect(await readProjectConfig(tmpDir)).toEqual({ backend: 'cursor' });
+    await fsPromises.writeFile(p, JSON.stringify({ backend: 'gemini' }));
+    expect(await readProjectConfig(tmpDir)).toEqual({});
+  });
+});
+
 describe('writeProjectConfig', () => {
   it('creates .nap/ if missing and round-trips', async () => {
     expect(fs.existsSync(path.join(tmpDir, '.nap'))).toBe(false);
