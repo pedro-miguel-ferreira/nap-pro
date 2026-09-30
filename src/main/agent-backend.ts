@@ -145,9 +145,11 @@ export const cursorBackend: AgentBackend = {
   // Resuming a missing chat silently starts an empty one (exit 0) — nothing
   // to detect in the output; sessionExists covers it before spawn.
   resumeFailedOutput: () => false,
+  // --force means the deny list is the only guardrail: no rules file, no spawn.
   installPermissions: (runDir) => {
     const permsPath = getPermissionsSettingsPath();
-    if (permsPath) installCursorPermissions(permsPath, runDir);
+    if (!permsPath) throw new Error('no .nap/permissions.json registered — refusing to run agent --force without a deny list');
+    installCursorPermissions(permsPath, runDir);
   },
   // Cursor transcripts carry no token usage.
   usageAvailable: false,
@@ -230,11 +232,16 @@ export function buildAgentSpawn(opts: {
   };
 }
 
-/** Best-effort — a failure here must not block the spawn (mirrors main.ts). */
+/**
+ * Best-effort for Claude (it reads .nap/permissions.json via --settings). For
+ * Cursor the generated deny list is the only guardrail under --force, so a
+ * failure blocks the spawn (fail closed).
+ */
 export function prepareRunDir(b: AgentBackend, cwd: string): void {
   try {
     b.installPermissions(resolveRunDir(cwd));
   } catch (err) {
+    if (b.name === 'cursor') throw err;
     // eslint-disable-next-line no-console
     console.warn(`[nap-pro] failed to install ${b.name} permissions in ${resolveRunDir(cwd)}:`, err);
   }

@@ -212,6 +212,8 @@ overrides it; nothing set → `claude`. What changes:
   or project root). Under `--force` there's no "ask" tier, so `ask` rules become
   hard denies — unless the guardian is set up. Generated `.cursor/cli.json` and
   `.cursor/hooks.json` are added to the repo's `.git/info/exclude`.
+  The deny list is the only guardrail under `--force`, so if it can't be
+  written (no readable `.nap/permissions.json`) the agent is not spawned.
 - **Guardian.** `setup --guardian` writes a `beforeShellExecution` hook
   (`nap-pro hook before-shell`) into `.cursor/hooks.json`. It allows commands
   that don't match an `ask` rule and routes matching ones to the guardian;
@@ -220,6 +222,10 @@ overrides it; nothing set → `claude`. What changes:
 - **Models.** Pickers list Cursor model ids. Saved Claude-style ids still work:
   `claude-opus-5-5` → `claude-opus-5-5-high`, etc.; retired ids map to the
   nearest Cursor model.
+  "default" means Opus 5.5 (`claude-opus-5-5-high`), not Cursor's own default.
+- **MCP logins are per folder.** `agent mcp login <server>` done in one folder
+  doesn't carry to another, including napkin worktrees; log in from the folder
+  an agent will run in if it needs an OAuth MCP server.
 - **Cost.** Not available (see Cost panel).
 - **Keystrokes.** `poke`/`ask` delivery (text, then Enter) works as with Claude.
   Escape while the agent is working cancels the turn and puts the prompt back

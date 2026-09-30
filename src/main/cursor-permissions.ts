@@ -142,7 +142,7 @@ export function writeGuardianHook(dir: string): string {
  */
 export function installCursorPermissions(permsPath: string, runDir: string): void {
   const settings = readPermissionsFile(permsPath);
-  if (!settings) return;
+  if (!settings) throw new Error(`unreadable permissions file: ${permsPath}`);
   const projectDir = path.dirname(path.dirname(permsPath));
   const guardian = hasGuardianHook(projectDir);
 

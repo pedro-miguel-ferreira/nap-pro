@@ -33,6 +33,14 @@ function tmpDir(prefix: string): string {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
+/** Register a real .nap/permissions.json — the Cursor backend refuses to spawn without one. */
+function registerPermissions(): void {
+  const permsPath = path.join(tmpDir('nap-cursor-proj-'), '.nap', 'permissions.json');
+  fs.mkdirSync(path.dirname(permsPath), { recursive: true });
+  fs.writeFileSync(permsPath, JSON.stringify(DEFAULT_PERMISSIONS_SETTINGS));
+  setPermissionsSettingsPath(permsPath);
+}
+
 /** Write a Cursor chat meta.json the way `agent` does, under a fake HOME. */
 function writeCursorChat(home: string, cwd: string, id: string, hasConversation = true): void {
   const hash = crypto.createHash('md5').update(cwd).digest('hex');
@@ -61,8 +69,10 @@ describe('cursor backend — args', () => {
   it('fresh and resume both use --resume <id> with trust/force flags', () => {
     const fresh = cursorBackend.buildArgs({ mode: 'fresh', sessionId: 'abc', prompt: 'hello' });
     const resume = cursorBackend.buildArgs({ mode: 'resume', sessionId: 'abc' });
-    expect(fresh).toEqual(['--resume', 'abc', '--trust', '--approve-mcps', '--force', 'hello']);
-    expect(resume).toEqual(['--resume', 'abc', '--trust', '--approve-mcps', '--force']);
+    // No stored model → Opus 5.5, never Cursor's own (Composer) default.
+    const flags = ['--resume', 'abc', '--trust', '--approve-mcps', '--force', '--model', 'claude-opus-5-5-high'];
+    expect(fresh).toEqual([...flags, 'hello']);
+    expect(resume).toEqual(flags);
   });
 
   it('never emits Claude-only flags', () => {
@@ -97,7 +107,8 @@ describe('cursor backend — args', () => {
 
   it('buildAgentSpawn uses the active backend binary', () => {
     setActiveBackend(cursorBackend);
-    const req = buildAgentSpawn({ id: 'abc', mode: 'fresh', cwd: '' });
+    registerPermissions();
+    const req = buildAgentSpawn({ id: 'abc', mode: 'fresh', cwd: tmpDir('nap-cursor-run-') });
     expect(req.file).toBe('agent');
     expect(req.args.slice(0, 2)).toEqual(['--resume', 'abc']);
   });
@@ -126,9 +137,9 @@ describe('cursor backend — mapModel', () => {
     expect(mapCursorModel('claude-sonnet-4-6')).toBe('claude-sonnet-5-high');
   });
 
-  it('empty → null (Cursor default)', () => {
-    expect(mapCursorModel(null)).toBeNull();
-    expect(mapCursorModel('')).toBeNull();
+  it('empty → Opus 5.5 (not Cursor\'s Composer default)', () => {
+    expect(mapCursorModel(null)).toBe('claude-opus-5-5-high');
+    expect(mapCursorModel('')).toBe('claude-opus-5-5-high');
   });
 });
 
@@ -183,6 +194,19 @@ describe('cursor backend — permissions', () => {
       'Shell(git clean*)',
       'Shell(git reset --hard*)',
     ]);
+  });
+
+  it('fails closed: no readable permissions file blocks the cursor spawn', () => {
+    const dir = tmpDir('nap-cursor-failclosed-');
+    setActiveBackend(cursorBackend);
+    setPermissionsSettingsPath(null);
+    expect(() => buildAgentSpawn({ id: crypto.randomUUID(), mode: 'fresh', cwd: dir })).toThrow();
+    setPermissionsSettingsPath(path.join(dir, '.nap', 'permissions.json')); // does not exist
+    expect(() => buildAgentSpawn({ id: crypto.randomUUID(), mode: 'fresh', cwd: dir })).toThrow();
+    expect(fs.existsSync(path.join(dir, '.cursor', 'cli.json'))).toBe(false);
+
+    setActiveBackend(claudeBackend); // Claude reads --settings itself — still spawns
+    expect(() => buildAgentSpawn({ id: crypto.randomUUID(), mode: 'fresh', cwd: dir })).not.toThrow();
   });
 
   it('ask rules are left to the guardian hook when it is installed', () => {
@@ -291,6 +315,7 @@ describe('cursor backend — spawn and resume paths', () => {
     // Survivability fixture agents have no worktree → run dir is NAP_CWD.
     process.env.NAP_CWD = runDir;
     setActiveBackend(cursorBackend);
+    registerPermissions();
   });
 
   it('computeResumeActions emits the agent binary + --resume', async () => {

@@ -34,10 +34,13 @@ const BARE_CLAUDE_ID = /^claude-[a-z]+-\d+(?:-\d+)?$/;
  * Translate a stored model id into one the `agent` CLI accepts. Claude-style
  * ids (`claude-opus-5-5`, `claude-fable-5`) get the `-high` effort tier;
  * anything else (already a Cursor id, e.g. `composer-2.5`,
- * `claude-opus-5-5-max`) passes through. Empty → null (Cursor's default).
+ * `claude-opus-5-5-max`) passes through. Empty ("default" in the pickers) →
+ * CURSOR_DEFAULT_MODEL — Cursor's own default is Composer, not a Claude model.
  */
+export const CURSOR_DEFAULT_MODEL = 'claude-opus-5-5-high';
+
 export function mapCursorModel(id: string | null | undefined): string | null {
-  if (!id) return null;
+  if (!id) return CURSOR_DEFAULT_MODEL;
   if (LEGACY_CLAUDE_IDS[id]) return LEGACY_CLAUDE_IDS[id];
   if (BARE_CLAUDE_ID.test(id)) return `${id}-high`;
   return id;
