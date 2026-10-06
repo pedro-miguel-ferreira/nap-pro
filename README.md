@@ -9,15 +9,28 @@ cost panels.
 
 ## Quick start
 
+Prerequisites: **macOS** (the PTY pause/resume handling is POSIX-only), **Node 22+**,
+and the **Xcode Command Line Tools** (`xcode-select --install`) — `npm install`
+compiles `node-pty` against Electron's headers.
+
 One-time setup:
 
 ```bash
-git clone git@github.com:pedro-miguel-ferreira/nap-pro.git ~/src/nap-pro
+git clone https://github.com/pedro-miguel-ferreira/nap-pro.git ~/src/nap-pro
+# or, with SSH keys set up: git clone git@github.com:pedro-miguel-ferreira/nap-pro.git ~/src/nap-pro
 cd ~/src/nap-pro
 npm install
 npm run build:cli
 npm link            # exposes `nap-pro` on $PATH (for the CLI + per-project flows)
 ```
+
+The install scripts that `electron`, `esbuild`, and `node-pty` need are
+pre-approved in `package.json` (`allowScripts`), so `npm install` works out of
+the box on npm 11+, which blocks dependency install scripts by default. If a
+dependency bump ever re-triggers the block (npm warns, and `npm start` fails
+with "Electron failed to install correctly"), run `npm install-scripts ls` to
+review and `npm install-scripts approve <pkg>` to re-allow, then `npm install`
+again.
 
 Launch the app — the usual way:
 
@@ -172,7 +185,9 @@ auto-create on launch).
 
 ### Workflows
 Define multi-stage pipelines in the **Workflows** editor: each stage has a name,
-role, **per-stage model dropdown** (Opus 4.7 / Sonnet 4.6 / Haiku 4.5 / default),
+role, **per-stage model dropdown** (the shared Claude model list — Fable 5,
+Opus 5, Opus 4.8/4.7, Sonnet 5/4.6, Haiku 4.5 — or the Cursor list on that
+backend; plus "default"),
 prompt source (template / custom / architect-decides), and an optional parallel
 group. Run one via a napkin's **Run workflow…**: the runner auto-creates the
 worktree (if enabled), spawns each stage's agent under the architect, awaits
