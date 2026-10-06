@@ -24,13 +24,20 @@ npm run build:cli
 npm link            # exposes `nap-pro` on $PATH (for the CLI + per-project flows)
 ```
 
-The install scripts that `electron`, `esbuild`, and `node-pty` need are
-pre-approved in `package.json` (`allowScripts`), so `npm install` works out of
-the box on npm 11+, which blocks dependency install scripts by default. If a
-dependency bump ever re-triggers the block (npm warns, and `npm start` fails
-with "Electron failed to install correctly"), run `npm install-scripts ls` to
-review and `npm install-scripts approve <pkg>` to re-allow, then `npm install`
-again.
+Two install snags are handled for you, both ending in the same symptom
+(`npm start` → "Electron failed to install correctly"):
+
+- **npm 11+ blocks dependency install scripts by default.** The scripts
+  `electron`, `esbuild`, and `node-pty` need are pre-approved in `package.json`
+  (`allowScripts`). If a dependency bump re-triggers the block (npm warns at
+  install), run `npm install-scripts ls` to review and
+  `npm install-scripts approve <pkg>` to re-allow, then `npm install` again.
+- **electron's own installer silently no-ops on Node 26+** (its `extract-zip`
+  dependency hangs, and the script exits 0 without extracting). Our
+  postinstall runs `scripts/ensure-electron.js`, which detects the botched
+  install and redoes the download/extraction with `curl` + `ditto`,
+  checksum-verified. If electron ever looks broken, `npm install` again — the
+  repair is idempotent.
 
 Launch the app — the usual way:
 
